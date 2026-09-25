@@ -3,12 +3,14 @@ import { Chart, useChart } from '@chakra-ui/charts';
 import { useEffect, useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
-import { LuActivity, LuCircleStop, LuClock, LuCrosshair, LuPlane, LuPlay, LuSatellite, LuShieldCheck } from 'react-icons/lu';
+import { LuActivity, LuCircleStop, LuClock, LuCrosshair, LuPlane, LuPlay, LuRuler, LuSatellite, LuShieldCheck, LuZap } from 'react-icons/lu';
 import { MdSensors } from 'react-icons/md';
 import { TbRadar2 } from 'react-icons/tb';
 import { DEFAULT_DEVICES, DEFAULT_HOME, DEFAULT_SURVEY, type Scan } from '@shared/types';
 import { useNow, useSdr } from '@/store';
-import { api, type AuditEntry } from '@/lib/api';
+import { api, type AuditEntry, type EmiResponse } from '@/lib/api';
+import { useUnits } from '@/lib/units';
+import { formatHzShort } from '@/lib/format';
 import { formatAgo, formatDateTime, formatDuration, formatMHz, formatTime } from '@/lib/format';
 import { distanceKm, compassLabel, bearingDeg } from '@/lib/geo';
 import { MODE_LABEL } from '@/lib/labels';
@@ -37,7 +39,9 @@ function describeConfig(status: NonNullable<ReturnType<typeof useSdr>['status']>
 }
 
 export function Dashboard() {
-  const { status, signals, devices, planes, satCaptures, setMode, stop, busy } = useSdr();
+  const { status, signals, devices, planes, satCaptures, calibration, signalsGainDb, setMode, stop, busy } = useSdr();
+  const u = useUnits();
+  const [emi, setEmi] = useState<EmiResponse | null>(null);
   const now = useNow();
   const [scanTimeMs, setScanTimeMs] = useState(0);
   const [baseAt, setBaseAt] = useState(Date.now());
@@ -51,6 +55,9 @@ export function Dashboard() {
   useEffect(() => {
     api.audit().then(setAudit).catch(() => setAudit([]));
   }, [devices]);
+  useEffect(() => {
+    api.emi().then(setEmi).catch(() => setEmi(null));
+  }, [status?.mode, status?.counters.sweeps]);
 
   const scanTime = scanTimeMs + (status?.mode !== 'idle' ? now - baseAt : 0);
 
@@ -84,6 +91,20 @@ export function Dashboard() {
     .map((p) => ({ p, km: distanceKm(home.lat, home.lon, p.lat!, p.lon!), brg: bearingDeg(home.lat, home.lon, p.lat!, p.lon!) }))
     .sort((a, b) => a.km - b.km), [planes, home, now]);
   const nearest = livePlanes[0] ?? null;
+
+  // Noise / calibration summary
+  const emiReport = emi?.report ?? null;
+  const emiTop = emiReport
+    ? emiReport.broadband.find((b) => !/operadors|mòbil|tuner/.test(b.source))
+      ? { label: 'banda ampla', text: `${formatHzShort(emiReport.broadband.find((b) => !/operadors|mòbil|tuner/.test(b.source))!.fromHz)}–${formatHzShort(emiReport.broadband.find((b) => !/operadors|mòbil|tuner/.test(b.source))!.toHz)} +${emiReport.broadband.find((b) => !/operadors|mòbil|tuner/.test(b.source))!.riseDb} dB` }
+      : emiReport.combs[0]
+        ? { label: 'pinta', text: `${emiReport.combs[0].count} espuris cada ${formatHzShort(emiReport.combs[0].spacingHz)} a ${formatMHz(emiReport.combs[0].fromHz, 1)} (font commutada)` }
+        : emiReport.carriers[0]
+          ? { label: 'portadora', text: `${formatMHz(emiReport.carriers[0].freqHz)} +${emiReport.carriers[0].excessDb} dB` }
+          : null
+    : null;
+  const calInfo = u.offset(signalsGainDb);
+  const calEntries = calibration?.entries ?? [];
 
   const huntSummary = lastHunt?.summary as { maxDbfs: number | null; maxAt: number | null; samples: number } | null | undefined;
   const huntCfg = lastHunt && 'sampleRate' in lastHunt.config ? lastHunt.config : null;
@@ -129,7 +150,7 @@ export function Dashboard() {
       </Card.Root>
 
       {/* Section summaries */}
-      <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} gap="4">
+      <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} gap="4">
         <SummaryCard title="Auditoria" to="/auditoria" icon={<LuShieldCheck />} palette={auditPlain ? 'red' : 'green'}>
           {audit === null ? (
             <Text color="fg.muted">Carregant…</Text>
@@ -182,6 +203,40 @@ export function Dashboard() {
           ) : (
             <Text color="fg.muted">Cap sessió encara. Per localitzar els LoRa de 868 MHz.</Text>
           )}
+        </SummaryCard>
+
+        <SummaryCard title="Soroll (EMI)" to="/soroll" icon={<LuZap />} palette={emiTop && emiTop.label === 'banda ampla' ? 'red' : emiReport?.combs.length ? 'orange' : 'green'}>
+          {emiReport ? (
+            <Stack gap="1">
+              <HStack gap="2" flexWrap="wrap">
+                <Text>Fons <b>{u.fmt(emiReport.floorDb, signalsGainDb)}</b>{u.units === 'dbm' ? ` (bin ${formatHzShort(emiReport.stepHz)})` : ''}</Text>
+                <Badge colorPalette={emiReport.combs.length ? 'orange' : 'gray'} variant="subtle" size="sm">{emiReport.combs.length} pintes</Badge>
+                <Badge colorPalette={emiReport.broadband.length ? 'red' : 'gray'} variant="subtle" size="sm">{emiReport.broadband.length} banda ampla</Badge>
+                <Badge variant="subtle" size="sm">{emiReport.carriers.length} portadores</Badge>
+              </HStack>
+              <Text fontSize="xs" color="fg.muted" lineClamp={2}>
+                {emiTop ? <><b>{emiTop.label}</b>: {emiTop.text}</> : 'Cap patró d’interferència local al darrer escombrat.'}
+                {emi?.baseline ? ` · línia base «${emi.baseline.label || `#${emi.baseline.scanId}`}»` : ''}
+              </Text>
+            </Stack>
+          ) : (
+            <Text color="fg.muted">Cap escombrat analitzat. Llança un escombrat EMI.</Text>
+          )}
+        </SummaryCard>
+
+        <SummaryCard title="Calibratge" to="/soroll" icon={<LuRuler />} palette={calEntries.length ? 'green' : 'gray'}>
+          <Stack gap="1">
+            <HStack gap="2" flexWrap="wrap">
+              <Badge colorPalette={calEntries.length ? 'green' : 'orange'} variant="subtle" size="sm">{calEntries.length ? `${calEntries.length} referència${calEntries.length > 1 ? 'es' : ''}` : 'sense referència'}</Badge>
+              <Badge variant="outline" size="sm">unitats: {u.unitLabel}</Badge>
+              <Text fontSize="sm">offset {calInfo.offsetDb > 0 ? '+' : ''}{calInfo.offsetDb} dB a {signalsGainDb ?? 40} dB de guany</Text>
+            </HStack>
+            <Text fontSize="xs" color="fg.muted" lineClamp={2}>
+              {calEntries.length
+                ? `${calInfo.source === 'calibrated' ? 'Calibrat' : calInfo.source === 'derived' ? `Derivat del calibratge a ${calInfo.fromGainDb} dB` : 'Estimat'} (±${calInfo.uncertaintyDb.toFixed(0)} dB). Última referència: ${formatMHz(calEntries[calEntries.length - 1]!.freqHz, 2)}, ${calEntries[calEntries.length - 1]!.refDbm} dBm.`
+                : 'dBm estimats amb valors típics del R820T (±6 dB). Afegeix una referència de nivell conegut per afinar.'}
+            </Text>
+          </Stack>
         </SummaryCard>
 
         <SummaryCard title="Radar" to="/radar" icon={<TbRadar2 />} palette="blue">
