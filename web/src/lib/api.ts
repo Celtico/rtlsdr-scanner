@@ -4,7 +4,10 @@ import type { ChunkDelta, EmiReport } from '@shared/sdr/emi';
 import type { CalScale, Calibration } from '@shared/sdr/calibration';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } });
+  // Only declare a JSON body when there is one: Fastify rejects an empty body with content-type JSON (400).
+  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> | undefined ?? {}) };
+  if (init?.body != null) headers['content-type'] = 'application/json';
+  const res = await fetch(url, { ...init, headers });
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) {
     const msg = body && typeof body === 'object' && 'error' in body ? String((body as { error: unknown }).error) : `HTTP ${res.status}`;

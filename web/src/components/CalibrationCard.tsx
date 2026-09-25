@@ -15,6 +15,7 @@ export function CalibrationCard({ scans }: { scans: Scan[] }) {
   const { calibration, refreshCalibration } = useSdr();
   const u = useUnits();
   const powerEntries = (calibration?.entries ?? []).filter((e) => entryScale(e) === 'power');
+  const allEntries = calibration?.entries ?? [];
   const [scanId, setScanId] = useState<number | null>(scans[0]?.id ?? null);
   const [freqTxt, setFreqTxt] = useState('107.4');
   const [reading, setReading] = useState<{ gainDb: number; freqHz: number; measuredDb: number } | null>(null);
@@ -41,7 +42,9 @@ export function CalibrationCard({ scans }: { scans: Scan[] }) {
       toaster.create({ title: 'Calibratge desat', description: `Offset ${(ref - reading.measuredDb).toFixed(1)} dB a ${reading.gainDb} dB de guany`, type: 'success', duration: 4000 });
     } catch (e) { toaster.create({ title: 'No s’ha pogut desar', description: (e as Error).message, type: 'error' }); }
   };
-  const remove = async (g: number) => { await api.calibrationRemove(g); await refreshCalibration(); };
+  const remove = async (g: number, scale: 'power' | 'iq') => {
+    try { await api.calibrationRemove(g, scale); await refreshCalibration(); } catch (e) { toaster.create({ title: 'No s’ha pogut esborrar', description: (e as Error).message, type: 'error' }); }
+  };
 
   return (
     <Card.Root size="sm" minW="0" overflow="hidden">
@@ -89,21 +92,22 @@ export function CalibrationCard({ scans }: { scans: Scan[] }) {
             Fes servir una <b>portadora estreta</b> (CW, to d’un generador) o el mateix pas d’escombrat que després vulguis llegir: un senyal ample com una emissora FM reparteix la potència entre bins i la lectura canvia amb el pas.
             Per a soroll de fons, els dBm són per bin de l’escombrat (10 kHz → −128 dBm és el soroll tèrmic del receptor).
           </Text>
-          <Text fontSize="xs" color="fg.muted">Aquest calibratge és per als escombrats (`rtl_power`). El Hunt (IQ cru, dBFS) té el seu propi calibratge a la seva pàgina.</Text>
-          {!!powerEntries.length && (
+          <Text fontSize="xs" color="fg.muted">Aquest formulari calibra els escombrats (rtl_power). El Hunt (IQ cru, dBFS) es calibra des de la seva pàgina; les referències de les dues escales es llisten aquí i es poden esborrar.</Text>
+          {!!allEntries.length && (
             <Box overflowX="auto">
               <Table.Root size="sm">
-                <Table.Header><Table.Row><Table.ColumnHeader>Guany</Table.ColumnHeader><Table.ColumnHeader>Freq.</Table.ColumnHeader><Table.ColumnHeader textAlign="end">Lectura</Table.ColumnHeader><Table.ColumnHeader textAlign="end">Referència</Table.ColumnHeader><Table.ColumnHeader textAlign="end">Offset</Table.ColumnHeader><Table.ColumnHeader>Nota</Table.ColumnHeader><Table.ColumnHeader /></Table.Row></Table.Header>
+                <Table.Header><Table.Row><Table.ColumnHeader>Escala</Table.ColumnHeader><Table.ColumnHeader>Guany</Table.ColumnHeader><Table.ColumnHeader>Freq.</Table.ColumnHeader><Table.ColumnHeader textAlign="end">Lectura</Table.ColumnHeader><Table.ColumnHeader textAlign="end">Referència</Table.ColumnHeader><Table.ColumnHeader textAlign="end">Offset</Table.ColumnHeader><Table.ColumnHeader>Nota</Table.ColumnHeader><Table.ColumnHeader /></Table.Row></Table.Header>
                 <Table.Body>
-                  {powerEntries.map((e) => (
-                    <Table.Row key={e.gainDb}>
+                  {allEntries.map((e) => (
+                    <Table.Row key={`${entryScale(e)}-${e.gainDb}`}>
+                      <Table.Cell><Badge variant="subtle" colorPalette={entryScale(e) === 'iq' ? 'purple' : 'brand'}>{entryScale(e) === 'iq' ? 'Hunt (dBFS)' : 'Escombrats'}</Badge></Table.Cell>
                       <Table.Cell>{e.gainDb} dB</Table.Cell>
                       <Table.Cell fontFamily="mono">{formatMHz(e.freqHz)}</Table.Cell>
-                      <Table.Cell textAlign="end">{e.measuredDb} dB</Table.Cell>
+                      <Table.Cell textAlign="end">{e.measuredDb} {entryScale(e) === 'iq' ? 'dBFS' : 'dB'}</Table.Cell>
                       <Table.Cell textAlign="end">{e.refDbm} dBm</Table.Cell>
                       <Table.Cell textAlign="end" fontWeight="semibold">{e.offsetDb > 0 ? '+' : ''}{e.offsetDb} dB</Table.Cell>
                       <Table.Cell fontSize="xs" color="fg.muted">{e.note || '—'} · {formatDateTime(e.at)}</Table.Cell>
-                      <Table.Cell textAlign="end"><Tooltip content="Esborra"><IconButton aria-label="Esborra" size="xs" variant="ghost" colorPalette="red" onClick={() => remove(e.gainDb)}><LuTrash2 /></IconButton></Tooltip></Table.Cell>
+                      <Table.Cell textAlign="end"><Tooltip content="Esborra"><IconButton aria-label={`Esborra la referència de ${e.gainDb} dB`} size="xs" variant="ghost" colorPalette="red" onClick={() => remove(e.gainDb, entryScale(e))}><LuTrash2 /></IconButton></Tooltip></Table.Cell>
                     </Table.Row>
                   ))}
                 </Table.Body>

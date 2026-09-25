@@ -79,7 +79,7 @@ export function HuntCalibration({ running, gainDb, readingDbfs, readingHz }: Hun
                 <HStack key={e.gainDb} gap="3">
                   <Text>guany <b>{e.gainDb} dB</b>: {e.measuredDb} dBFS = {e.refDbm} dBm → offset {e.offsetDb > 0 ? '+' : ''}{e.offsetDb} dB</Text>
                   <Text color="fg.muted">{e.note || '—'} · {formatDateTime(e.at)}</Text>
-                  <Tooltip content="Esborra"><IconButton aria-label="Esborra" size="2xs" variant="ghost" colorPalette="red" onClick={async () => { await api.calibrationRemove(e.gainDb, 'iq'); await refreshCalibration(); }}><LuTrash2 /></IconButton></Tooltip>
+                  <Tooltip content="Esborra"><IconButton aria-label="Esborra" size="2xs" variant="ghost" colorPalette="red" onClick={async () => { try { await api.calibrationRemove(e.gainDb, 'iq'); await refreshCalibration(); } catch (err) { toaster.create({ title: 'No s’ha pogut esborrar', description: (err as Error).message, type: 'error' }); } }}><LuTrash2 /></IconButton></Tooltip>
                 </HStack>
               ))}
             </Stack>
