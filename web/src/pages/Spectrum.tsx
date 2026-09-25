@@ -9,7 +9,7 @@ import { Waterfall } from '@/components/Waterfall';
 import { SignalsTable } from '@/components/SignalsTable';
 
 const PRESETS: { label: string; fromMHz: number; toMHz: number; stepKHz: number }[] = [
-  { label: 'Tot (24–1700 MHz, 1 MHz)', fromMHz: 24, toMHz: 1700, stepKHz: 1000 },
+  { label: 'Tot (24–1700 MHz, 100 kHz)', fromMHz: 24, toMHz: 1700, stepKHz: 100 },
   { label: 'FM (87–108 MHz, 25 kHz)', fromMHz: 87, toMHz: 108, stepKHz: 25 },
   { label: 'Aèria (118–137 MHz, 10 kHz)', fromMHz: 118, toMHz: 137, stepKHz: 10 },
   { label: 'VHF (137–175 MHz, 10 kHz)', fromMHz: 137, toMHz: 175, stepKHz: 10 },

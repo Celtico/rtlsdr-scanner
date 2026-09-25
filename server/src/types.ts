@@ -154,7 +154,9 @@ export type WsMessage =
 export const DEFAULT_SURVEY: SurveyConfig = {
   fromHz: 24_000_000,
   toHz: 1_700_000_000,
-  stepHz: 1_000_000,
+  // rtl_power makes one 1-bin hop per MHz with a 1 MHz step (1676 hops, ~73 s/pass); any step <= 500 kHz
+  // uses full 2.8 MHz hops (599 hops, ~23 s/pass). Measured on an RTL-SDR Blog V3.
+  stepHz: 100_000,
   gainDb: 40,
   intervalS: 10,
   thresholdDb: 10,

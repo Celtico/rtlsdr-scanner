@@ -111,7 +111,7 @@ describe('peak detection', () => {
 
 describe('rtl_power args', () => {
   it('formats frequencies with M/k suffixes', () => {
-    expect(rtlPowerArgs(DEFAULT_SURVEY)).toEqual(['-f', '24M:1700M:1M', '-i', '10', '-g', '40', '-']);
+    expect(rtlPowerArgs(DEFAULT_SURVEY)).toEqual(['-f', '24M:1700M:100k', '-i', '10', '-g', '40', '-']);
     expect(rtlPowerArgs({ ...DEFAULT_SURVEY, fromHz: 400_000_000, toHz: 470_000_000, stepHz: 10_000 })[1]).toBe('400M:470M:10k');
   });
 

@@ -67,5 +67,5 @@ web/src/
 ## Notes d'ús
 
 - Només un procés pot fer servir el dongle. Canviar de mode atura l'anterior i espera que alliberi l'USB.
-- `rtl_power` amb pas d'1 MHz fa un salt per MHz (1676 salts de 24 a 1700 MHz): la primera passada triga uns minuts. Amb passos petits (10–100 kHz) cada salt cobreix 2,4 MHz i va molt més ràpid.
+- `rtl_power` amb pas d'1 MHz fa un salt d'un sol bin per MHz (1676 salts de 24 a 1700 MHz, ~73 s per passada). Amb passos ≤ 500 kHz cada salt cobreix 2,8 MHz (599 salts, ~23 s per passada), per això el pas per defecte és 100 kHz.
 - Bandes xifrades (mòbil, TETRA) només mostren «activitat detectada». No es descodifica ni es grava àudio de comunicacions privades.
