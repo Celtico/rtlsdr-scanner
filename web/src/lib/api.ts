@@ -1,7 +1,7 @@
 import type { Band, Device, ModeConfig, Plane, Reading, SatCapture, SatInfo, SatPass, Scan, Signal, Status, Sweep } from '@shared/types';
 import type { AuditVerdict } from '@shared/sdr/audit';
 import type { ChunkDelta, EmiReport } from '@shared/sdr/emi';
-import type { Calibration } from '@shared/sdr/calibration';
+import type { CalScale, Calibration } from '@shared/sdr/calibration';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } });
@@ -52,8 +52,8 @@ export const api = {
   audit: () => request<AuditEntry[]>('/api/audit'),
   calibration: () => request<Calibration>('/api/calibration'),
   calibrationReading: (scanId: number, freqHz: number) => request<{ scanId: number; gainDb: number; freqHz: number; measuredDb: number; stepHz: number }>(`/api/calibration/reading?scanId=${scanId}&freqHz=${freqHz}`),
-  calibrationAdd: (b: { gainDb: number; freqHz: number; measuredDb: number; refDbm: number; note: string }) => request<Calibration>('/api/calibration', { method: 'POST', body: JSON.stringify(b) }),
-  calibrationRemove: (gainDb: number) => request<Calibration>(`/api/calibration/${gainDb}`, { method: 'DELETE' }),
+  calibrationAdd: (b: { scale?: CalScale; gainDb: number; freqHz: number; measuredDb: number; refDbm: number; note: string }) => request<Calibration>('/api/calibration', { method: 'POST', body: JSON.stringify(b) }),
+  calibrationRemove: (gainDb: number, scale: CalScale = 'power') => request<Calibration>(`/api/calibration/${gainDb}?scale=${scale}`, { method: 'DELETE' }),
   emi: (scanId?: number) => request<EmiResponse>(`/api/emi${scanId ? `?scanId=${scanId}` : ''}`),
   emiSetBaseline: (scanId: number, label: string) => request<{ scanId: number }>('/api/emi/baseline', { method: 'POST', body: JSON.stringify({ scanId, label }) }),
   emiClearBaseline: () => request<{ ok: true }>('/api/emi/baseline', { method: 'DELETE' }),

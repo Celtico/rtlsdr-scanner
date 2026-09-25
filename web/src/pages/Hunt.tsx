@@ -5,6 +5,9 @@ import { DEFAULT_HUNT, EU868_CHANNELS_HZ, type HuntConfig } from '@shared/types'
 import { useNow, useSdr } from '@/store';
 import { useHuntFeed, HUNT_WINDOW_MS } from '@/lib/huntFeed';
 import { formatAgo, formatTime } from '@/lib/format';
+import { useUnits } from '@/lib/units';
+import { UnitsToggle } from '@/components/UnitsToggle';
+import { HuntCalibration } from '@/components/HuntCalibration';
 
 const GAINS = [0, 0.9, 1.4, 2.7, 3.7, 7.7, 8.7, 12.5, 14.4, 15.7, 16.6, 19.7, 20.7, 22.9, 25.4, 28, 29.7, 32.8, 33.8, 36.4, 37.2, 38.6, 40.2, 42.1, 43.4, 43.9, 44.5, 48, 49.6];
 const SINGLE_PRESETS = [
@@ -16,7 +19,7 @@ const SINGLE_PRESETS = [
 const MIN_DB = -70;
 const MAX_DB = 0;
 
-function LevelChart({ levels, floor }: { levels: { ts: number; dbfs: number; peakDbfs: number }[]; floor: number }) {
+function LevelChart({ levels, floor, offset = 0 }: { levels: { ts: number; dbfs: number; peakDbfs: number }[]; floor: number; offset?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(600);
@@ -48,7 +51,7 @@ function LevelChart({ levels, floor }: { levels: { ts: number; dbfs: number; pea
     ctx.globalAlpha = 0.8;
     ctx.fillStyle = cs.getPropertyValue('--h-muted') || '#666';
     ctx.font = '10px system-ui';
-    for (let db = MIN_DB; db <= MAX_DB; db += 20) ctx.fillText(`${db}`, 2, y(db) - 2);
+    for (let db = MIN_DB; db <= MAX_DB; db += 20) ctx.fillText(`${Math.round(db + offset)}`, 2, y(db) - 2);
     ctx.globalAlpha = 1;
     ctx.setLineDash([4, 4]);
     ctx.strokeStyle = cs.getPropertyValue('--h-muted') || '#666';
@@ -63,7 +66,7 @@ function LevelChart({ levels, floor }: { levels: { ts: number; dbfs: number; pea
     };
     draw('peakDbfs', '#f97316', 0.6, 1);
     draw('dbfs', cs.getPropertyValue('--h-accent') || '#36cfc9', 1, 1.6);
-  }, [levels, floor, w]);
+  }, [levels, floor, w, offset]);
   return (
     <Box ref={wrap} rounded="md" overflow="hidden" borderWidth="1px" borderColor="border" css={{ '--h-bg': 'var(--chakra-colors-bg-panel)', '--h-muted': 'var(--chakra-colors-fg-muted)', '--h-accent': 'var(--chakra-colors-brand-solid)' }}>
       <canvas ref={ref} style={{ width: w, height: 160, display: 'block' }} />
@@ -133,6 +136,7 @@ export function Hunt() {
   const { status, setMode, stop, busy } = useSdr();
   const feed = useHuntFeed();
   const now = useNow(1000);
+  const u = useUnits();
   const running = status?.mode === 'hunt';
   const runningCfg = running && status.config && 'sampleRate' in status.config ? status.config : null;
   const [mode, setModeSel] = useState<'eu868' | 'single'>(DEFAULT_HUNT.mode);
@@ -152,6 +156,9 @@ export function Hunt() {
   }, [feed.levels, feed.latest]);
   const current = feed.latest?.peakDbfs ?? null;
   const above = current === null ? null : current - floor;
+  const cv = (db: number) => u.value(db, gain, 'iq');
+  const unit = u.label('iq');
+  const dbOffset = u.units === 'dbm' ? u.offset(gain, 'iq').offsetDb : 0;
   useTone(sound && running, above, volume, feed.bursts[0]?.ts ?? 0);
 
   const buildConfig = (g = gain): HuntConfig => (mode === 'eu868'
@@ -259,21 +266,22 @@ export function Hunt() {
           <Card.Body>
             <HStack justify="space-between" align="flex-start" flexWrap="wrap">
               <Box>
-                <Text fontSize="xs" color="fg.muted" textTransform="uppercase" letterSpacing="wide">RSSI ara{channels && feed.latest?.strongestHz ? ` · canal ${(feed.latest.strongestHz / 1e6).toFixed(1)} MHz` : ''}</Text>
+                <HStack gap="3"><Text fontSize="xs" color="fg.muted" textTransform="uppercase" letterSpacing="wide">RSSI ara{channels && feed.latest?.strongestHz ? ` · canal ${(feed.latest.strongestHz / 1e6).toFixed(1)} MHz` : ''}</Text><UnitsToggle gainDb={gain} scale="iq" /></HStack>
                 <HStack align="baseline" gap="2">
                   <Text fontSize={{ base: '6xl', md: '8xl' }} fontWeight="bold" fontVariantNumeric="tabular-nums" lineHeight="1" color={stale ? 'fg.muted' : 'fg'}>
-                    {current === null ? '—' : current.toFixed(1)}
+                    {current === null ? '—' : cv(current).toFixed(1)}
                   </Text>
-                  <Text fontSize="xl" color="fg.muted">dBFS</Text>
+                  <Text fontSize="xl" color="fg.muted">{unit}</Text>
                 </HStack>
                 <Text fontSize="sm" color="fg.muted" mt="1">
-                  {above === null ? 'Sense dades' : `${above >= 0 ? '+' : ''}${above.toFixed(1)} dB sobre el soroll de fons (${floor.toFixed(1)} dBFS)`}
+                  {above === null ? 'Sense dades' : `${above >= 0 ? '+' : ''}${above.toFixed(1)} dB sobre el soroll de fons (${cv(floor).toFixed(1)} ${unit})`}
+                  {u.units === 'dbm' && <Text as="span" color="orange.fg"> · {u.note(gain, 'iq')}</Text>}
                 </Text>
               </Box>
               <Box textAlign="right">
                 <Text fontSize="xs" color="fg.muted" textTransform="uppercase" letterSpacing="wide">Pic màxim</Text>
                 <Text fontSize="4xl" fontWeight="bold" fontVariantNumeric="tabular-nums" color="orange.fg">
-                  {Number.isFinite(feed.maxDbfs) ? feed.maxDbfs.toFixed(1) : '—'}
+                  {Number.isFinite(feed.maxDbfs) ? `${cv(feed.maxDbfs).toFixed(1)} ${unit}` : '—'}
                 </Text>
                 <Text fontSize="xs" color="fg.muted">{feed.maxAt ? `${formatTime(feed.maxAt)} · ${formatAgo(feed.maxAt, now)}` : 'encara cap'}</Text>
               </Box>
@@ -281,7 +289,7 @@ export function Hunt() {
             <Progress.Root value={pct} size="lg" colorPalette={pct > 75 ? 'red' : pct > 45 ? 'orange' : 'brand'} mt="4" aria-label="Nivell RSSI">
               <Progress.Track><Progress.Range /></Progress.Track>
             </Progress.Root>
-            <HStack justify="space-between" fontSize="xs" color="fg.muted" mt="1"><Text>{MIN_DB} dBFS</Text><Text>{MAX_DB} dBFS</Text></HStack>
+            <HStack justify="space-between" fontSize="xs" color="fg.muted" mt="1"><Text>{Math.round(MIN_DB + dbOffset)} {unit}</Text><Text>{Math.round(MAX_DB + dbOffset)} {unit}</Text></HStack>
             {channels && (
               <Box mt="4">
                 <Text fontSize="xs" color="fg.muted" mb="2">Els 8 canals EU868 (pic dels últims 100 ms)</Text>
@@ -293,7 +301,7 @@ export function Hunt() {
                       <Box key={c.freqHz} flex="1" textAlign="center">
                         <Box mx="auto" w="full" h={`${h}px`} bg={hot ? 'orange.solid' : 'brand.solid'} opacity={hot ? 1 : 0.6} rounded="sm" transition="height 0.1s" />
                         <Text fontSize="10px" color="fg.muted" mt="1">{(c.freqHz / 1e6).toFixed(1)}</Text>
-                        <Text fontSize="10px" fontVariantNumeric="tabular-nums" color={hot ? 'orange.fg' : 'fg.muted'}>{c.peakDbfs.toFixed(0)}</Text>
+                        <Text fontSize="10px" fontVariantNumeric="tabular-nums" color={hot ? 'orange.fg' : 'fg.muted'}>{cv(c.peakDbfs).toFixed(0)}</Text>
                       </Box>
                     );
                   })}
@@ -308,7 +316,7 @@ export function Hunt() {
               <HStack><Box color="brand.fg"><LuCrosshair /></Box><Text fontWeight="semibold">Com buscar</Text></HStack>
               <Text color="fg.muted">1. Activa el so, auriculars, i camina a poc a poc amb el portàtil a la mà.</Text>
               <Text color="fg.muted">2. Cada ~10 min el sensor emet una ràfega («tic»): fixa’t on ha pujat el pic i cap a on anaves.</Text>
-              <Text color="fg.muted">3. Referència: el gateway el sent a −101 dBm. A prop del sensor l’RSSI pujarà molt per sobre; si el nivell s’acosta a 0 dBFS, abaixa el guany.</Text>
+              <Text color="fg.muted">3. Referència: el gateway el sent a −101 dBm. A prop del sensor l’RSSI pujarà molt per sobre; si el nivell s’acosta a 0 dBFS ({Math.round(dbOffset)} dBm amb el calibratge actual), abaixa el guany.</Text>
               <Text color="fg.muted">4. Direcció: amb una Yagi 868 és clara. Amb la vareta, gira sobre tu mateix tapant l’antena amb el cos: el mínim apunta cap on és el sensor.</Text>
               {running && runningCfg && (
                 <Badge colorPalette="brand" variant="subtle" alignSelf="flex-start">
@@ -333,7 +341,7 @@ export function Hunt() {
             </HStack>
           </Card.Header>
           <Card.Body pt="0">
-            {feed.levels.length ? <LevelChart levels={feed.levels} floor={floor} /> : <Text color="fg.muted" py="6" textAlign="center">Inicia el mode Hunt per veure el nivell en viu.</Text>}
+            {feed.levels.length ? <LevelChart levels={feed.levels} floor={floor} offset={dbOffset} /> : <Text color="fg.muted" py="6" textAlign="center">Inicia el mode Hunt per veure el nivell en viu.</Text>}
           </Card.Body>
         </Card.Root>
         <Card.Root size="sm" minW="0" overflow="hidden">
@@ -342,13 +350,13 @@ export function Hunt() {
             {feed.bursts.length ? (
               <Box overflowY="auto" maxH="72">
                 <Table.Root size="sm">
-                  <Table.Header><Table.Row><Table.ColumnHeader>Hora</Table.ColumnHeader><Table.ColumnHeader>Canal</Table.ColumnHeader><Table.ColumnHeader textAlign="end">RSSI</Table.ColumnHeader><Table.ColumnHeader textAlign="end">+fons</Table.ColumnHeader></Table.Row></Table.Header>
+                  <Table.Header><Table.Row><Table.ColumnHeader>Hora</Table.ColumnHeader><Table.ColumnHeader>Canal</Table.ColumnHeader><Table.ColumnHeader textAlign="end">RSSI ({unit})</Table.ColumnHeader><Table.ColumnHeader textAlign="end">+fons</Table.ColumnHeader></Table.Row></Table.Header>
                   <Table.Body>
                     {feed.bursts.slice(0, 40).map((b, i) => (
                       <Table.Row key={`${b.ts}-${b.freqHz}-${i}`}>
                         <Table.Cell fontVariantNumeric="tabular-nums">{formatTime(b.ts)}</Table.Cell>
                         <Table.Cell fontFamily="mono">{(b.freqHz / 1e6).toFixed(1)} MHz</Table.Cell>
-                        <Table.Cell textAlign="end" fontVariantNumeric="tabular-nums" fontWeight="semibold">{b.peakDbfs.toFixed(1)}</Table.Cell>
+                        <Table.Cell textAlign="end" fontVariantNumeric="tabular-nums" fontWeight="semibold">{cv(b.peakDbfs).toFixed(1)}</Table.Cell>
                         <Table.Cell textAlign="end"><Badge colorPalette={b.aboveFloorDb >= 20 ? 'red' : b.aboveFloorDb >= 12 ? 'orange' : 'gray'} variant="subtle">+{b.aboveFloorDb.toFixed(0)} dB</Badge></Table.Cell>
                       </Table.Row>
                     ))}
@@ -361,6 +369,8 @@ export function Hunt() {
           </Card.Body>
         </Card.Root>
       </SimpleGrid>
+
+      <HuntCalibration running={running} gainDb={gain} readingDbfs={feed.latest?.peakDbfs ?? null} readingHz={feed.latest?.strongestHz ?? (runningCfg?.mode === 'single' ? runningCfg.freqHz : null)} />
     </Stack>
   );
 }

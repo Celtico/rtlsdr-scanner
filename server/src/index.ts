@@ -283,21 +283,22 @@ app.get<{ Querystring: { scanId?: string; freqHz?: string; windowHz?: string } }
   return { scanId, gainDb: scan.config.gainDb, freqHz: Math.round(bestHz), measuredDb: Math.round(best * 10) / 10, stepHz: spec.stepHz };
 });
 
-app.post<{ Body: { gainDb?: number; freqHz?: number; measuredDb?: number; refDbm?: number; note?: string } }>('/api/calibration', async (req, reply) => {
+app.post<{ Body: { gainDb?: number; freqHz?: number; measuredDb?: number; refDbm?: number; note?: string; scale?: string } }>('/api/calibration', async (req, reply) => {
   const b = req.body ?? {};
+  const scale = b.scale === 'iq' ? 'iq' : 'power';
   const gainDb = num(b.gainDb, NaN);
   const freqHz = num(b.freqHz, NaN);
   const measuredDb = num(b.measuredDb, NaN);
   const refDbm = num(b.refDbm, NaN);
   if (![gainDb, freqHz, measuredDb, refDbm].every(Number.isFinite)) return reply.code(400).send({ error: 'Calen guany, freqüència, lectura i referència' });
   if (refDbm > 10 || refDbm < -150) return reply.code(400).send({ error: 'Referència fora de rang (−150…+10 dBm)' });
-  const cal = upsertEntry(db.getSetting<Calibration>('calibration'), { gainDb, freqHz: Math.round(freqHz), measuredDb, refDbm, note: typeof b.note === 'string' ? b.note.slice(0, 80) : '' });
+  const cal = upsertEntry(db.getSetting<Calibration>('calibration'), { scale, gainDb, freqHz: Math.round(freqHz), measuredDb, refDbm, note: typeof b.note === 'string' ? b.note.slice(0, 80) : '' });
   db.setSetting('calibration', cal);
   return cal;
 });
 
-app.delete<{ Params: { gain: string } }>('/api/calibration/:gain', async (req) => {
-  const cal = removeEntry(db.getSetting<Calibration>('calibration'), num(req.params.gain, NaN));
+app.delete<{ Params: { gain: string }; Querystring: { scale?: string } }>('/api/calibration/:gain', async (req) => {
+  const cal = removeEntry(db.getSetting<Calibration>('calibration'), num(req.params.gain, NaN), req.query.scale === 'iq' ? 'iq' : 'power');
   db.setSetting('calibration', cal);
   return cal;
 });

@@ -176,7 +176,7 @@ export function Noise() {
           <Card.Root size="sm" minW="0" overflow="hidden">
             <Card.Header>
               <Card.Title>Perfil del soroll de fons</Card.Title>
-              <Card.Description>Percentil 20 de cada tram (ignora els senyals que hi ha a sobre), en {u.unitLabel}. Els trams alts són els contaminats.{data?.delta ? ' En gris, la línia base.' : ''} {u.units === 'dbm' && <Text as="span" color="orange.fg">{u.note(scanGain)}.</Text>}</Card.Description>
+              <Card.Description>Percentil 20 de cada tram (ignora els senyals que hi ha a sobre), en {u.label()}. Els trams alts són els contaminats.{data?.delta ? ' En gris, la línia base.' : ''} {u.units === 'dbm' && <Text as="span" color="orange.fg">{u.note(scanGain)}.</Text>}</Card.Description>
             </Card.Header>
             <Card.Body>
               <Chart.Root chart={chunkChart} h="64">

@@ -104,10 +104,11 @@ export function Dashboard() {
           : null
     : null;
   const calInfo = u.offset(signalsGainDb);
-  const calEntries = calibration?.entries ?? [];
+  const calEntries = (calibration?.entries ?? []).filter((e) => (e.scale ?? 'power') === 'power');
 
   const huntSummary = lastHunt?.summary as { maxDbfs: number | null; maxAt: number | null; samples: number; maxHz?: number | null } | null | undefined;
   const huntCfg = lastHunt && 'sampleRate' in lastHunt.config ? lastHunt.config : null;
+  const huntCal = u.offset(huntCfg?.gainDb ?? null, 'iq');
 
   return (
     <Stack gap="6">
@@ -197,7 +198,7 @@ export function Dashboard() {
             <Stack gap="1">
               <Text>Última sessió: <b>{huntCfg.mode === 'eu868' ? 'EU868, 8 canals' : formatMHz(huntCfg.freqHz)}</b> · guany {huntCfg.gainDb} dB</Text>
               <Text fontSize="xs" color="fg.muted">
-                {huntSummary?.maxDbfs != null ? `Pic màxim ${huntSummary.maxDbfs.toFixed(1)} dBFS${huntSummary.maxHz ? ` a ${formatMHz(huntSummary.maxHz, 1)}` : ''}${huntSummary.maxAt ? ` a les ${formatTime(huntSummary.maxAt)}` : ''}` : 'Sense pic registrat'} · {formatAgo(lastHunt.endedAt ?? lastHunt.startedAt, now)}
+                {huntSummary?.maxDbfs != null ? `Pic màxim ${u.fmt(huntSummary.maxDbfs, huntCfg.gainDb, 1, 'iq')}${huntSummary.maxHz ? ` a ${formatMHz(huntSummary.maxHz, 1)}` : ''}${huntSummary.maxAt ? ` a les ${formatTime(huntSummary.maxAt)}` : ''}` : 'Sense pic registrat'} · {formatAgo(lastHunt.endedAt ?? lastHunt.startedAt, now)}{u.units === 'dbm' ? ` · ${huntCal.source === 'calibrated' ? 'calibrat' : huntCal.source === 'derived' ? 'derivat' : 'estimat ±10 dB'}` : ''}
               </Text>
             </Stack>
           ) : (
@@ -228,7 +229,8 @@ export function Dashboard() {
           <Stack gap="1">
             <HStack gap="2" flexWrap="wrap">
               <Badge colorPalette={calEntries.length ? 'green' : 'orange'} variant="subtle" size="sm">{calEntries.length ? `${calEntries.length} referència${calEntries.length > 1 ? 'es' : ''}` : 'sense referència'}</Badge>
-              <Badge variant="outline" size="sm">unitats: {u.unitLabel}</Badge>
+              <Badge variant="outline" size="sm">unitats: {u.label()}</Badge>
+              <Badge variant="outline" size="sm" colorPalette={huntCal.source === 'estimated' ? 'orange' : 'green'}>Hunt: {huntCal.source === 'estimated' ? 'estimat' : 'calibrat'}</Badge>
               <Text fontSize="sm">offset {calInfo.offsetDb > 0 ? '+' : ''}{calInfo.offsetDb} dB a {signalsGainDb ?? 40} dB de guany</Text>
             </HStack>
             <Text fontSize="xs" color="fg.muted" lineClamp={2}>
