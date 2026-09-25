@@ -121,3 +121,13 @@ describe('rtl_power args', () => {
     expect(validateSurveyConfig({ ...DEFAULT_SURVEY, stepHz: 100 })).toMatch(/pas/);
   });
 });
+
+describe('SweepAssembler with endHz', () => {
+  it('closes each sweep as soon as the last hop arrives', () => {
+    const a = new SweepAssembler(1, 470_000_000);
+    const closedAt: number[] = [];
+    FIXTURE.forEach((line, i) => { if (a.push(line)) closedAt.push(i); });
+    expect(closedAt).toEqual([24, 49, 74, 99, 124, 149]);
+    expect(a.flush()).toBeNull();
+  });
+});

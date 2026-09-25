@@ -46,7 +46,11 @@ export class SweepAssembler {
   private lines: PowerLine[] = [];
   private currentTs: string | null = null;
 
-  constructor(private readonly scanId: number) {}
+  /**
+   * @param endHz upper end of the requested range: when a hop reaches it the sweep is closed immediately
+   * instead of waiting for the next sweep's first line (a full-band pass can take minutes).
+   */
+  constructor(private readonly scanId: number, private readonly endHz: number | null = null) {}
 
   /** Feed one raw line; returns a completed sweep when one closes. */
   push(raw: string): Sweep | null {
@@ -56,6 +60,10 @@ export class SweepAssembler {
     if (this.currentTs !== null && line.ts !== this.currentTs) done = this.flush();
     this.currentTs = line.ts;
     this.lines.push(line);
+    if (this.endHz !== null && line.highHz >= this.endHz - line.stepHz) {
+      const closed = this.flush();
+      return done ?? closed;
+    }
     return done;
   }
 

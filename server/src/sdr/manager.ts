@@ -186,7 +186,7 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
 
   private startSurvey(config: SurveyConfig): void {
     const scanId = this.db.createScan('survey', config);
-    const assembler = new SweepAssembler(scanId);
+    const assembler = new SweepAssembler(scanId, config.toHz);
     const tracker = new SignalTracker(scanId, { thresholdDb: config.thresholdDb });
     const ref: { a: Active | null } = { a: null };
     const proc = new SdrProcess('rtl_power', rtlPowerArgs(config), {
