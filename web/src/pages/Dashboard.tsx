@@ -30,6 +30,7 @@ function describeConfig(status: NonNullable<ReturnType<typeof useSdr>['status']>
   if ('fromHz' in c) return `${formatMHz(c.fromHz, 0)} – ${formatMHz(c.toHz, 0)} · llindar ${c.thresholdDb} dB`;
   if ('freqsHz' in c) return c.freqsHz.map((f) => formatMHz(f, 2)).join(' + ');
   if ('captureId' in c) return `${c.satellite} · ${formatMHz(c.freqHz)}`;
+  if ('channel' in c) return `DAB bloc ${c.channel} (Docker)`;
   if ('sampleRate' in c) return `${formatMHz(c.freqHz)} · ${c.sampleRate / 1000} kHz`;
   if ('freqHz' in c) return `${formatMHz(c.freqHz, 1)} FM`;
   return '1090 MHz';

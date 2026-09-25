@@ -10,7 +10,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { toaster } from '@/components/ui/toaster';
 import { MODE_LABEL } from '@/lib/labels';
 
-const KIND_PALETTE: Record<Scan['kind'], string> = { survey: 'brand', devices: 'green', adsb: 'blue', hunt: 'purple', satellite: 'orange', audio: 'pink' };
+const KIND_PALETTE: Record<Scan['kind'], string> = { survey: 'brand', devices: 'green', adsb: 'blue', hunt: 'purple', satellite: 'orange', audio: 'pink', dab: 'teal' };
 
 function describe(s: Scan): string {
   if (s.kind === 'survey' && 'fromHz' in s.config) {
@@ -18,6 +18,9 @@ function describe(s: Scan): string {
   }
   if (s.kind === 'devices' && 'freqsHz' in s.config) {
     return s.config.freqsHz.map((f) => formatHzShort(f)).join(' + ');
+  }
+  if (s.kind === 'dab' && 'channel' in s.config) {
+    return `bloc ${s.config.channel} · welle-cli (Docker)`;
   }
   if (s.kind === 'audio' && 'freqHz' in s.config && !('sampleRate' in s.config)) {
     return `${formatHzShort(s.config.freqHz)} FM`;
@@ -37,6 +40,7 @@ function counts(s: Scan): string {
   if (s.kind === 'hunt') return 'RSSI en viu';
   if (s.kind === 'satellite') return 'captura SatDump';
   if (s.kind === 'audio') return 'escolta';
+  if (s.kind === 'dab') return 'ràdio digital';
   return `${s.planes} avions`;
 }
 
@@ -57,6 +61,7 @@ export function History() {
     else if (s.kind === 'hunt') navigate('/hunt');
     else if (s.kind === 'satellite') navigate('/satellits');
     else if (s.kind === 'audio') navigate('/espectre');
+    else if (s.kind === 'dab') navigate('/dab');
     else navigate('/avions');
   };
 

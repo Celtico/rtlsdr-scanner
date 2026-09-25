@@ -19,6 +19,13 @@ export interface AuditEntry {
   activeDays: number;
 }
 
+/** Subset of welle-cli's /mux.json that the UI uses. */
+export interface DabMux {
+  ensemble?: { id?: string; label?: { label?: string } };
+  demodulator?: { snr?: number; fic?: { numcrcerrors?: number }; frequencycorrection?: number };
+  services?: { sid: number | string; label: { label: string }; dls?: { label?: string }; components?: { subchannel?: { bitrate?: number; protection?: string } }[] }[];
+}
+
 export interface DevicePatch { alias?: string | null; owner?: 'own' | 'other' | null; bearingDeg?: number | null }
 
 export const api = {
@@ -33,6 +40,9 @@ export const api = {
   patchDevice: (id: number, patch: DevicePatch) => request<Device>(`/api/devices/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   setAlias: (id: number, alias: string | null) => request<Device>(`/api/devices/${id}`, { method: 'PATCH', body: JSON.stringify({ alias }) }),
   audit: () => request<AuditEntry[]>('/api/audit'),
+  dabMux: () => request<{ running: boolean; ready?: boolean; mux: DabMux | null; log: string[] }>('/api/dab/mux'),
+  dabChannel: (channel: string) => request<{ channel: string }>('/api/dab/channel', { method: 'POST', body: JSON.stringify({ channel }) }),
+  dabMp3Url: (sid: string) => `/api/dab/mp3/${encodeURIComponent(sid)}`,
   satInfo: () => request<{ satellites: SatInfo[]; satdump: boolean; dir: string }>('/api/satellite/info'),
   satPasses: (lat: number, lon: number, hours = 24) => request<{ tleFetchedAt: number; passes: (SatPass & { captureId: number | null })[] }>(`/api/satellite/passes?lat=${lat}&lon=${lon}&hours=${hours}`),
   satCaptures: () => request<SatCapture[]>('/api/satellite/captures'),

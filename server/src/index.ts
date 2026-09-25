@@ -14,8 +14,8 @@ import { loadTles, predictAll, satInfo, SATELLITES } from './sdr/satellite.js';
 import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
 import { normalize, sep } from 'node:path';
 import {
-  AUDIO_SAMPLE_RATE, DEFAULT_ADSB, DEFAULT_DEVICES, DEFAULT_HOME, DEFAULT_HUNT, DEFAULT_SURVEY,
-  type AdsbConfig, type AudioConfig, type DevicesConfig, type HuntConfig, type ModeConfig, type SatCapture, type SurveyConfig, type WsMessage,
+  AUDIO_SAMPLE_RATE, DAB_CHANNELS, DAB_WEB_PORT, DEFAULT_ADSB, DEFAULT_DAB, DEFAULT_DEVICES, DEFAULT_HOME, DEFAULT_HUNT, DEFAULT_SURVEY,
+  type AdsbConfig, type AudioConfig, type DabConfig, type DevicesConfig, type HuntConfig, type ModeConfig, type SatCapture, type SurveyConfig, type WsMessage,
 } from './types.js';
 
 const PORT = Number(process.env.PORT ?? 4000);
@@ -99,6 +99,10 @@ function parseModeBody(body: unknown): ModeConfig {
       // FM channels sit on a 100 kHz grid; snap so a click on a detected peak lands on the station.
       const config: AudioConfig = { freqHz: Math.round(num(cfg.freqHz, 0) / 100_000) * 100_000, gainDb: cfg.gainDb == null ? null : num(cfg.gainDb, 0) };
       return { mode: 'audio', config };
+    }
+    case 'dab': {
+      const config: DabConfig = { channel: typeof cfg.channel === 'string' ? cfg.channel.toUpperCase() : DEFAULT_DAB.channel, gainDb: cfg.gainDb == null ? null : num(cfg.gainDb, 0) };
+      return { mode: 'dab', config };
     }
     case 'satellite':
       throw Object.assign(new Error('El mode satellite es llança des de /api/satellite/captures'), { statusCode: 400 });
@@ -274,6 +278,54 @@ app.get('/api/audio/stream', async (req, reply) => {
     req.raw.on('close', done);
     reply.raw.on('close', done);
   });
+  return reply;
+});
+
+// ---------- DAB (proxy to welle-cli's web server in the container) ----------
+
+const WELLE = `http://127.0.0.1:${DAB_WEB_PORT}`;
+
+app.get('/api/dab/channels', async () => DAB_CHANNELS);
+
+app.get('/api/dab/mux', async () => {
+  if (manager.status().mode !== 'dab') return { running: false, log: [] };
+  try {
+    const res = await fetch(`${WELLE}/mux.json`, { signal: AbortSignal.timeout(4000) });
+    const mux: unknown = await res.json();
+    return { running: true, ready: res.ok, mux, log: manager.currentLog().slice(-30) };
+  } catch {
+    return { running: true, ready: false, mux: null, log: manager.currentLog().slice(-30) };
+  }
+});
+
+app.post<{ Body: { channel?: string } }>('/api/dab/channel', async (req, reply) => {
+  const ch = String(req.body?.channel ?? '').toUpperCase();
+  if (!DAB_CHANNELS.some((c) => c.name === ch)) return reply.code(400).send({ error: 'Bloc DAB desconegut' });
+  if (manager.status().mode !== 'dab') return reply.code(409).send({ error: 'El mode DAB no està actiu' });
+  const res = await fetch(`${WELLE}/channel`, { method: 'POST', body: ch, signal: AbortSignal.timeout(4000) }).catch(() => null);
+  if (!res || !res.ok) return reply.code(502).send({ error: 'welle-cli no ha acceptat el canvi de bloc' });
+  return { channel: ch };
+});
+
+/** MP3 of one DAB service, streamed through so the browser only talks to this server. */
+app.get<{ Params: { sid: string } }>('/api/dab/mp3/:sid', async (req, reply) => {
+  if (manager.status().mode !== 'dab') return reply.code(409).send({ error: 'El mode DAB no està actiu' });
+  const sid = req.params.sid.replace(/[^0-9a-fx]/gi, '');
+  const ac = new AbortController();
+  req.raw.on('close', () => ac.abort());
+  const res = await fetch(`${WELLE}/mp3/${sid}`, { signal: ac.signal }).catch(() => null);
+  if (!res || !res.ok || !res.body) return reply.code(502).send({ error: 'welle-cli no serveix aquest programa' });
+  reply.raw.writeHead(200, { 'content-type': 'audio/mpeg', 'cache-control': 'no-store' });
+  const reader = res.body.getReader();
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done || !value) break;
+      if (reply.raw.writableEnded) break;
+      reply.raw.write(value);
+    }
+  } catch { /* client went away */ }
+  reply.raw.end();
   return reply;
 });
 

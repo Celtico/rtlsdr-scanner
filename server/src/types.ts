@@ -1,6 +1,6 @@
 // Shared types between server and web. Frequencies are always integer Hz.
 
-export type Mode = 'idle' | 'survey' | 'devices' | 'adsb' | 'hunt' | 'satellite' | 'audio';
+export type Mode = 'idle' | 'survey' | 'devices' | 'adsb' | 'hunt' | 'satellite' | 'audio' | 'dab';
 
 export type DongleState = 'unknown' | 'connected' | 'in-use' | 'busy' | 'missing' | 'error';
 
@@ -56,9 +56,18 @@ export interface AudioConfig {
   gainDb: number | null;
 }
 
+/** DAB/DAB+ via welle-cli inside Docker, fed by rtl_tcp on the host. */
+export interface DabConfig {
+  /** Band III block, e.g. "10C". */
+  channel: string;
+  /** rtl_tcp gain in dB, or null for automatic. */
+  gainDb: number | null;
+}
+
 export type ModeConfig =
   | { mode: 'idle' }
   | { mode: 'audio'; config: AudioConfig }
+  | { mode: 'dab'; config: DabConfig }
   | { mode: 'survey'; config: SurveyConfig }
   | { mode: 'devices'; config: DevicesConfig }
   | { mode: 'adsb'; config: AdsbConfig }
@@ -70,10 +79,10 @@ export interface Status {
   dongle: DongleInfo;
   scanId: number | null;
   startedAt: number | null;
-  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | SatelliteConfig | AudioConfig | null;
+  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | SatelliteConfig | AudioConfig | DabConfig | null;
   lastError: { code: SdrErrorCode; message: string; at: number } | null;
   counters: { sweeps: number; signals: number; devices: number; planes: number };
-  tools: Record<'rtl_test' | 'rtl_power' | 'rtl_433' | 'rtl_adsb' | 'rtl_sdr' | 'rtl_fm' | 'satdump', boolean>;
+  tools: Record<'rtl_test' | 'rtl_power' | 'rtl_433' | 'rtl_adsb' | 'rtl_sdr' | 'rtl_fm' | 'rtl_tcp' | 'satdump' | 'docker', boolean>;
 }
 
 export interface Band {
@@ -169,7 +178,7 @@ export interface HuntLevel {
   peakDbfs: number;
 }
 
-export type ScanKind = 'survey' | 'devices' | 'adsb' | 'hunt' | 'satellite' | 'audio';
+export type ScanKind = 'survey' | 'devices' | 'adsb' | 'hunt' | 'satellite' | 'audio' | 'dab';
 
 export interface SatInfo {
   /** Key used in configs and TLE cache, e.g. "NOAA 19". */
@@ -216,7 +225,7 @@ export interface Scan {
   kind: ScanKind;
   startedAt: number;
   endedAt: number | null;
-  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | SatelliteConfig | AudioConfig;
+  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | SatelliteConfig | AudioConfig | DabConfig;
   /** Per-kind result summary written when the scan ends (hunt: { maxDbfs, maxAt, samples }). */
   summary: Record<string, unknown> | null;
   sweeps: number;
@@ -258,6 +267,32 @@ export const DEFAULT_ADSB: AdsbConfig = { gainDb: null };
 export const AUDIO_SAMPLE_RATE = 48_000;
 /** Only broadcast radio may be listened to (see CLAUDE.md): the FM band. */
 export const FM_BAND = { fromHz: 87_500_000, toHz: 108_000_000 };
+
+/** DAB band III blocks (centre frequency in Hz). */
+export const DAB_CHANNELS: { name: string; freqHz: number }[] = [
+  ['5A', 174.928], ['5B', 176.64], ['5C', 178.352], ['5D', 180.064], ['6A', 181.936], ['6B', 183.648], ['6C', 185.36], ['6D', 187.072],
+  ['7A', 188.928], ['7B', 190.64], ['7C', 192.352], ['7D', 194.064], ['8A', 195.936], ['8B', 197.648], ['8C', 199.36], ['8D', 201.072],
+  ['9A', 202.928], ['9B', 204.64], ['9C', 206.352], ['9D', 208.064], ['10A', 209.936], ['10B', 211.648], ['10C', 213.36], ['10D', 215.072],
+  ['11A', 216.928], ['11B', 218.64], ['11C', 220.352], ['11D', 222.064], ['12A', 223.936], ['12B', 225.648], ['12C', 227.36], ['12D', 229.072],
+  ['13A', 230.784], ['13B', 232.496], ['13C', 234.208], ['13D', 235.776], ['13E', 237.488], ['13F', 239.2],
+].map(([name, mhz]) => ({ name: name as string, freqHz: Math.round((mhz as number) * 1e6) }));
+
+/** Nearest DAB block for a frequency inside band III (±0.9 MHz), else null. */
+export function dabChannelFor(freqHz: number): string | null {
+  let best: { name: string; d: number } | null = null;
+  for (const c of DAB_CHANNELS) {
+    const d = Math.abs(c.freqHz - freqHz);
+    if (d <= 900_000 && (!best || d < best.d)) best = { name: c.name, d };
+  }
+  return best?.name ?? null;
+}
+
+export const DEFAULT_DAB: DabConfig = { channel: '10C', gainDb: null };
+/** rtl_tcp port on the host and welle-cli web port published by the container. */
+export const RTL_TCP_PORT = 1234;
+export const DAB_WEB_PORT = 7979;
+export const DAB_IMAGE = 'rtlsdr-decoders';
+export const DAB_CONTAINER = 'sdr-dab';
 
 export const DEFAULT_HUNT: HuntConfig = { freqHz: 868_100_000, gainDb: 29.7, sampleRate: 250_000 };
 

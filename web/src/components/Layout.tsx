@@ -1,7 +1,7 @@
 import { Badge, Box, Button, Drawer, Flex, HStack, Heading, IconButton, Portal, Spinner, Stack, Text, VStack } from '@chakra-ui/react';
 import { useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LuActivity, LuCircleStop, LuCrosshair, LuHistory, LuLayoutDashboard, LuMenu, LuPlane, LuRefreshCw, LuSatellite, LuShieldCheck, LuX } from 'react-icons/lu';
+import { LuActivity, LuCircleStop, LuCrosshair, LuHistory, LuLayoutDashboard, LuMenu, LuPlane, LuRadioTower, LuRefreshCw, LuSatellite, LuShieldCheck, LuX } from 'react-icons/lu';
 import { MdSensors } from 'react-icons/md';
 import { TbAntenna, TbRadar2 } from 'react-icons/tb';
 import { useSdr } from '@/store';
@@ -21,6 +21,7 @@ const NAV: { to: string; label: string; icon: ReactNode }[] = [
   { to: '/auditoria', label: 'Auditoria', icon: <LuShieldCheck /> },
   { to: '/hunt', label: 'Hunt', icon: <LuCrosshair /> },
   { to: '/satellits', label: 'Satèl·lits', icon: <LuSatellite /> },
+  { to: '/dab', label: 'DAB', icon: <LuRadioTower /> },
   { to: '/historic', label: 'Històric', icon: <LuHistory /> },
 ];
 

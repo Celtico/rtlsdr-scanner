@@ -79,3 +79,16 @@ describe('audit classification', () => {
     expect(routineHours(new Array<number>(24).fill(0))).toEqual([]);
   });
 });
+
+describe('DAB helpers', () => {
+  it('maps band III frequencies to the nearest block', async () => {
+    const { dabChannelFor, DAB_CHANNELS } = await import('../src/types.js');
+    expect(DAB_CHANNELS.length).toBe(38);
+    expect(dabChannelFor(213_360_000)).toBe('10C');
+    expect(dabChannelFor(213_000_000)).toBe('10C');
+    expect(dabChannelFor(218_640_000)).toBe('11B');
+    expect(dabChannelFor(100_000_000)).toBeNull();
+    expect(dabChannelFor(174_500_000)).toBe('5A');
+    expect(dabChannelFor(174_000_000)).toBeNull(); // 928 kHz off-centre: outside a block
+  });
+});

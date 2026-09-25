@@ -9,6 +9,8 @@ Aplicació web local per descobrir quins senyals de ràdio hi ha a casa amb un *
 - **Auditoria**: superfície d'exposició de ràdio de casa: què emet en clar, què és identificable per ID, rutines horàries i recomanacions. Només metadades dels dispositius propis.
 - **Hunt**: RSSI en viu (10×/s) en una freqüència fixa amb `rtl_sdr` (IQ cru, 250 kHz), pic màxim i to sonor tipus detector de metalls per localitzar sensors LoRa a 868 MHz.
 - **Satèl·lits**: passos de NOAA-15/19 (APT) i Meteor-M2 3/4 (LRPT) sobre casa amb TLE de Celestrak (SGP4 via `satellite.js`), programació de captures que llancen **SatDump** pel `manager` i galeria de les imatges descodificades a `data/satellite/`.
+- **Ràdio FM**: botó d'escolta als senyals de la banda FM (`rtl_fm` → PCM → Web Audio). Només radiodifusió: cap altra banda es reprodueix.
+- **DAB**: ràdio digital descodificada per `welle-cli` **dins de Docker**; el Mac només executa `rtl_tcp` (osmocom) i el contenidor s'hi connecta per xarxa. Llista de programes i àudio MP3 a través del servidor.
 - **Històric**: tots els escaneigs es desen a SQLite i es poden tornar a obrir i exportar (CSV/JSON).
 
 ## Requisits
@@ -16,6 +18,11 @@ Aplicació web local per descobrir quins senyals de ràdio hi ha a casa amb un *
 - macOS amb Homebrew, Node 22+ i pnpm.
 - Eines SDR: `brew install librtlsdr rtl_433`.
 - Satèl·lits (opcional): `brew install satdump` (cask; deixa `SatDump.app` a `/Applications`). El servidor crida el binari del bundle directament, perquè pel symlink de Homebrew SatDump no troba la seva configuració. Si el tens en un altre lloc: `SATDUMP_BIN=/ruta/satdump`.
+- Descodificadors en Docker (opcional, per al DAB): Docker Desktop en marxa i la imatge construïda:
+  ```bash
+  docker build -t rtlsdr-decoders docker/decoders
+  ```
+  La imatge (Debian) porta `welle.io`, `rtl-sdr` (osmocom) i `rtl_433`. Docker Desktop a macOS no pot accedir a l'USB: per això el dongle el gestiona `rtl_tcp` al Mac (port 1234) i el contenidor s'hi connecta a `host.docker.internal`. TDT (DVB-T) no és possible amb aquest dongle en mode SDR (cal 9 MS/s i arriba a 2,4).
 - Comprova el dongle: `rtl_test -t` ha de llistar `Realtek, RTL2838UHIDIR`.
 
 ## Ordres
@@ -50,7 +57,8 @@ server/src/
   sdr/bands.ts      taula de bandes
 server/test/        tests + fixtures capturades amb el dongle
 web/src/
-  pages/            Dashboard, Spectrum, Devices, Planes, Radar, Audit, Hunt, Satellites, History
+  pages/            Dashboard, Spectrum, Devices, Planes, Radar, Audit, Hunt, Satellites, Dab, History
+docker/decoders/    Dockerfile dels descodificadors (welle-cli, rtl-sdr, rtl_433)
   components/       Waterfall i RadarCanvas (canvas), SignalsTable, DeviceDrawer, Layout…
   store.tsx         estat global alimentat pel WebSocket
 ```
@@ -60,7 +68,9 @@ web/src/
 | Mètode | Ruta | Descripció |
 | --- | --- | --- |
 | GET | `/api/status` | mode actiu, estat del dongle, comptadors |
-| POST | `/api/mode` | `{ mode: 'idle' \| 'survey' \| 'devices' \| 'adsb' \| 'hunt', config }` (el mode `satellite` es llança des de les captures) |
+| POST | `/api/mode` | `{ mode: 'idle' \| 'survey' \| 'devices' \| 'adsb' \| 'hunt' \| 'audio' \| 'dab', config }` (el mode `satellite` es llança des de les captures) |
+| GET | `/api/audio/stream` | PCM s16le mono 48 kHz de l'emissora FM en reproducció |
+| GET / POST | `/api/dab/channels`, `/api/dab/mux`, `/api/dab/channel`, `/api/dab/mp3/:sid` | blocs, estat del múltiplex (proxy de welle-cli), canvi de bloc, àudio d'un programa |
 | POST | `/api/dongle/check` | executa `rtl_test -t` (només en mode inactiu) |
 | GET | `/api/bands` | taula de bandes |
 | GET | `/api/signals?scanId=` | senyals detectats |

@@ -1,7 +1,8 @@
 import { Badge, Box, HStack, IconButton, Table, Text } from '@chakra-ui/react';
 import { useMemo, useState } from 'react';
 import { LuArrowDown, LuArrowUp, LuArrowUpDown, LuLock, LuPlay, LuTv, LuCircleStop } from 'react-icons/lu';
-import { isFmBroadcast, mediaNote } from '@/lib/media';
+import { isFmBroadcast, mediaNote, mediaRoute } from '@/lib/media';
+import { Link as RouterLink } from 'react-router-dom';
 import type { Signal } from '@shared/types';
 import { formatMHz, formatWidth } from '@/lib/format';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -87,6 +88,12 @@ export function SignalsTable({ signals, selectedId, onSelect, playingHz = null, 
                         <IconButton aria-label={`Escolta ${formatMHz(s.freqHz, 1)}`} size="xs" colorPalette="brand" variant="subtle" onClick={() => onPlay(s)}><LuPlay /></IconButton>
                       </Tooltip>
                     )
+                  ) : mediaRoute(s) ? (
+                    <Tooltip content={mediaNote(s)!}>
+                      <IconButton asChild aria-label="Obre a DAB" size="xs" colorPalette="teal" variant="subtle">
+                        <RouterLink to={mediaRoute(s)!}><LuPlay /></RouterLink>
+                      </IconButton>
+                    </Tooltip>
                   ) : mediaNote(s) ? (
                     <Tooltip content={mediaNote(s)!}>
                       <Box color="fg.muted" display="inline-flex" p="1" aria-label="No reproduïble"><LuTv /></Box>

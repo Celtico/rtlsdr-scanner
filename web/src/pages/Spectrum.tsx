@@ -14,6 +14,7 @@ const PRESETS: { label: string; fromMHz: number; toMHz: number; stepKHz: number 
   { label: 'FM (87–108 MHz, 25 kHz)', fromMHz: 87, toMHz: 108, stepKHz: 25 },
   { label: 'Aèria (118–137 MHz, 10 kHz)', fromMHz: 118, toMHz: 137, stepKHz: 10 },
   { label: 'VHF (137–175 MHz, 10 kHz)', fromMHz: 137, toMHz: 175, stepKHz: 10 },
+  { label: 'DAB banda III (174–240 MHz, 50 kHz)', fromMHz: 174, toMHz: 240, stepKHz: 50 },
   { label: 'UHF ISM 433 (400–470 MHz, 10 kHz)', fromMHz: 400, toMHz: 470, stepKHz: 10 },
   { label: 'ISM 868 (860–880 MHz, 5 kHz)', fromMHz: 860, toMHz: 880, stepKHz: 5 },
   { label: 'TDT (470–700 MHz, 100 kHz)', fromMHz: 470, toMHz: 700, stepKHz: 100 },
