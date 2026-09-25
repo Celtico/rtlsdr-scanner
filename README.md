@@ -4,7 +4,10 @@ Aplicació web local per descobrir quins senyals de ràdio hi ha a casa amb un *
 
 - **Espectre**: escombrats amb `rtl_power`, waterfall en temps real, detecció de pics sobre el soroll de fons i classificació per banda (ES/UE).
 - **Dispositius**: `rtl_433` saltant entre 433,92 i 868,3 MHz. Dedup per model+id+canal, històric de lectures, àlies, filtre «probablement meu / veïns».
-- **Avions**: ADS-B a 1090 MHz amb `rtl_adsb` (ICAO, indicatiu, altitud, posició, velocitat).
+- **Avions**: ADS-B a 1090 MHz amb `rtl_adsb` (ICAO, país pel bloc ICAO, indicatiu, altitud, posició, velocitat, rumb).
+- **Radar**: vista en planta centrada a casa (Lleida per defecte, configurable). Avions per posició real amb estela; la resta de dispositius en anells per RSSI amb direcció desconeguda (o manual, si l'has trobada amb una antena directiva).
+- **Auditoria**: superfície d'exposició de ràdio de casa: què emet en clar, què és identificable per ID, rutines horàries i recomanacions. Només metadades dels dispositius propis.
+- **Hunt**: RSSI en viu (10×/s) en una freqüència fixa amb `rtl_sdr` (IQ cru, 250 kHz), pic màxim i to sonor tipus detector de metalls per localitzar sensors LoRa a 868 MHz.
 - **Històric**: tots els escaneigs es desen a SQLite i es poden tornar a obrir i exportar (CSV/JSON).
 
 ## Requisits
@@ -38,11 +41,14 @@ server/src/
   sdr/survey.ts     parser de rtl_power, assemblador d'escombrats, detecció de pics
   sdr/devices.ts    parser de rtl_433 i dedup
   sdr/adsb.ts       descodificador Mode S / ADS-B (CRC, indicatiu, altitud, CPR, velocitat)
+  sdr/icao.ts       blocs d'adreces ICAO → país
+  sdr/hunt.ts       mesurador de potència a partir de l'IQ de rtl_sdr
+  sdr/audit.ts      classificació d'exposició (en clar / ID / codi variable) i rutines
   sdr/bands.ts      taula de bandes
 server/test/        tests + fixtures capturades amb el dongle
 web/src/
-  pages/            Dashboard, Spectrum, Devices, Planes, History
-  components/       Waterfall (canvas), SignalsTable, DeviceDrawer, Layout…
+  pages/            Dashboard, Spectrum, Devices, Planes, Radar, Audit, Hunt, History
+  components/       Waterfall i RadarCanvas (canvas), SignalsTable, DeviceDrawer, Layout…
   store.tsx         estat global alimentat pel WebSocket
 ```
 
@@ -51,18 +57,19 @@ web/src/
 | Mètode | Ruta | Descripció |
 | --- | --- | --- |
 | GET | `/api/status` | mode actiu, estat del dongle, comptadors |
-| POST | `/api/mode` | `{ mode: 'idle' \| 'survey' \| 'devices' \| 'adsb', config }` |
+| POST | `/api/mode` | `{ mode: 'idle' \| 'survey' \| 'devices' \| 'adsb' \| 'hunt', config }` |
 | POST | `/api/dongle/check` | executa `rtl_test -t` (només en mode inactiu) |
 | GET | `/api/bands` | taula de bandes |
 | GET | `/api/signals?scanId=` | senyals detectats |
 | GET | `/api/sweeps?scanId=&limit=` | escombrats (per tornar a obrir un waterfall) |
 | GET | `/api/devices` | dispositius rtl_433 |
 | GET | `/api/devices/:id/history` | lectures d'un dispositiu |
-| PATCH | `/api/devices/:id` | `{ alias }` |
+| PATCH | `/api/devices/:id` | `{ alias?, owner?: 'own' \| 'other' \| null, bearingDeg? }` |
+| GET | `/api/audit` | exposició, activitat per hora i rutines dels dispositius propis |
 | GET | `/api/planes?scanId=` | avions |
 | GET | `/api/scans`, `/api/scans/:id`, DELETE `/api/scans/:id` | històric |
 | GET | `/api/export/:kind?format=csv\|json&scanId=&deviceId=` | `signals`, `devices`, `planes`, `sweeps`, `readings` |
-| WS | `/ws` | `status`, `survey:sweep`, `survey:signals`, `device:new`, `device:update`, `adsb:plane`, `error` |
+| WS | `/ws` | `status`, `survey:sweep`, `survey:signals`, `device:new`, `device:update`, `adsb:plane`, `hunt:level`, `error` |
 
 ## Notes d'ús
 

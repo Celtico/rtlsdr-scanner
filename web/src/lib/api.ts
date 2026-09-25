@@ -1,4 +1,5 @@
 import type { Band, Device, ModeConfig, Plane, Reading, Scan, Signal, Status, Sweep } from '@shared/types';
+import type { AuditVerdict } from '@shared/sdr/audit';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } });
@@ -10,6 +11,16 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+export interface AuditEntry {
+  device: Device;
+  verdict: AuditVerdict;
+  activityByHour: number[];
+  routineHours: number[];
+  activeDays: number;
+}
+
+export interface DevicePatch { alias?: string | null; owner?: 'own' | 'other' | null; bearingDeg?: number | null }
+
 export const api = {
   status: () => request<Status>('/api/status'),
   checkDongle: () => request<Status['dongle']>('/api/dongle/check', { method: 'POST' }),
@@ -19,7 +30,9 @@ export const api = {
   sweeps: (scanId?: number, limit = 300) => request<{ scanId: number | null; sweeps: Sweep[] }>(`/api/sweeps?limit=${limit}${scanId ? `&scanId=${scanId}` : ''}`),
   devices: () => request<Device[]>('/api/devices'),
   deviceHistory: (id: number) => request<{ device: Device; readings: Reading[] }>(`/api/devices/${id}/history`),
+  patchDevice: (id: number, patch: DevicePatch) => request<Device>(`/api/devices/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   setAlias: (id: number, alias: string | null) => request<Device>(`/api/devices/${id}`, { method: 'PATCH', body: JSON.stringify({ alias }) }),
+  audit: () => request<AuditEntry[]>('/api/audit'),
   planes: (scanId?: number) => request<Plane[]>(`/api/planes${scanId ? `?scanId=${scanId}` : ''}`),
   scans: () => request<Scan[]>('/api/scans'),
   deleteScan: (id: number) => request<{ ok: true }>(`/api/scans/${id}`, { method: 'DELETE' }),

@@ -4,11 +4,16 @@ import type { Band, Device, ModeConfig, Plane, Signal, Status, Sweep, WsMessage 
 import { api } from '@/lib/api';
 import { useSdrSocket } from '@/hooks/useSdrSocket';
 import { toaster } from '@/components/ui/toaster';
+import { pushHuntLevel, resetHunt } from '@/lib/huntFeed';
 
 const MAX_SWEEPS = 300;
 
+export interface TrailPoint { lat: number; lon: number; ts: number }
+
 export interface SdrStore {
   connected: boolean;
+  /** Last positions per ICAO (client-side only), for the radar trail. */
+  trails: ReadonlyMap<string, TrailPoint[]>;
   status: Status | null;
   bands: Band[];
   sweeps: Sweep[];
@@ -37,6 +42,7 @@ export function SdrProvider({ children }: { children: ReactNode }) {
   const [planes, setPlanes] = useState<Plane[]>([]);
   const [busy, setBusy] = useState(false);
   const lastErrorAt = useRef(0);
+  const trailsRef = useRef(new Map<string, TrailPoint[]>());
 
   const upsertDevice = useCallback((d: Device) => {
     setDevices((prev) => {
@@ -76,7 +82,17 @@ export function SdrProvider({ children }: { children: ReactNode }) {
       case 'device:update':
         upsertDevice(m.device);
         break;
+      case 'hunt:level':
+        pushHuntLevel(m.level, m.maxDbfs, m.maxAt);
+        break;
       case 'adsb:plane':
+        if (m.plane.lat != null && m.plane.lon != null) {
+          const t = trailsRef.current.get(m.plane.icao) ?? [];
+          const last = t[t.length - 1];
+          if (!last || last.lat !== m.plane.lat || last.lon !== m.plane.lon) {
+            trailsRef.current.set(m.plane.icao, [...t.slice(-39), { lat: m.plane.lat, lon: m.plane.lon, ts: m.plane.lastSeen }]);
+          }
+        }
         setPlanes((prev) => {
           const i = prev.findIndex((p) => p.icao === m.plane.icao);
           if (i === -1) return [m.plane, ...prev];
@@ -142,6 +158,7 @@ export function SdrProvider({ children }: { children: ReactNode }) {
         setSignals([]);
         setSignalsScanId(st.scanId);
       }
+      if (mc.mode === 'hunt') resetHunt();
       return true;
     } catch (e) {
       toaster.create({ title: 'No s’ha pogut canviar de mode', description: (e as Error).message, type: 'error', closable: true });
@@ -154,7 +171,7 @@ export function SdrProvider({ children }: { children: ReactNode }) {
   const stop = useCallback(() => setMode({ mode: 'idle' }), [setMode]);
 
   const value = useMemo<SdrStore>(() => ({
-    connected, status, bands, sweeps, signals, signalsScanId, devices, planes, busy,
+    connected, status, bands, sweeps, signals, signalsScanId, devices, planes, busy, trails: trailsRef.current,
     setMode, stop, refreshDevices, refreshPlanes, updateDevice: upsertDevice, loadScanSweeps,
   }), [connected, status, bands, sweeps, signals, signalsScanId, devices, planes, busy, setMode, stop, refreshDevices, refreshPlanes, upsertDevice, loadScanSweeps]);
 

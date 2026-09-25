@@ -5,6 +5,9 @@ import { Spectrum } from '@/pages/Spectrum';
 import { Devices } from '@/pages/Devices';
 import { Planes } from '@/pages/Planes';
 import { History } from '@/pages/History';
+import { Radar } from '@/pages/Radar';
+import { Audit } from '@/pages/Audit';
+import { Hunt } from '@/pages/Hunt';
 
 export function App() {
   return (
@@ -14,6 +17,9 @@ export function App() {
         <Route path="espectre" element={<Spectrum />} />
         <Route path="dispositius" element={<Devices />} />
         <Route path="avions" element={<Planes />} />
+        <Route path="radar" element={<Radar />} />
+        <Route path="auditoria" element={<Audit />} />
+        <Route path="hunt" element={<Hunt />} />
         <Route path="historic" element={<History />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

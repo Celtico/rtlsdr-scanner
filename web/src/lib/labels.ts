@@ -5,4 +5,5 @@ export const MODE_LABEL: Record<Mode, string> = {
   survey: 'Escombrat',
   devices: 'Dispositius',
   adsb: 'ADS-B',
+  hunt: 'Hunt',
 };

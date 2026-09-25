@@ -17,7 +17,7 @@ export function Planes() {
         <Card.Body>
           <HStack justify="space-between" flexWrap="wrap" gap="3">
             <Text color="fg.muted" fontSize="sm">
-              ADS-B a 1090 MHz. Millor amb l’antena vertical i a prop d’una finestra. Posició només quan arriben trames parell i senar seguides.
+              ADS-B a 1090 MHz. Millor amb l’antena vertical i a prop d’una finestra. Posició només quan arriben trames parell i senar seguides. El país surt del bloc d’adreces ICAO.
             </Text>
             <HStack>
               <Button asChild size="sm" variant="outline" disabled={!planes.length}>
@@ -42,6 +42,7 @@ export function Planes() {
                   <Table.Row>
                     <Table.ColumnHeader>ICAO</Table.ColumnHeader>
                     <Table.ColumnHeader>Indicatiu</Table.ColumnHeader>
+                    <Table.ColumnHeader display={{ base: 'none', md: 'table-cell' }}>País</Table.ColumnHeader>
                     <Table.ColumnHeader textAlign="end">Altitud</Table.ColumnHeader>
                     <Table.ColumnHeader textAlign="end" display={{ base: 'none', md: 'table-cell' }}>Velocitat</Table.ColumnHeader>
                     <Table.ColumnHeader textAlign="end" display={{ base: 'none', md: 'table-cell' }}>Rumb</Table.ColumnHeader>
@@ -60,6 +61,7 @@ export function Planes() {
                         <Table.Cell>
                           {p.callsign ? <Badge variant="subtle" colorPalette="blue" fontFamily="mono">{p.callsign}</Badge> : <Text color="fg.muted">—</Text>}
                         </Table.Cell>
+                        <Table.Cell display={{ base: 'none', md: 'table-cell' }} color={p.country ? 'fg' : 'fg.muted'}>{p.country ?? 'Desconegut'}</Table.Cell>
                         <Table.Cell textAlign="end" fontVariantNumeric="tabular-nums">{p.altitudeFt != null ? `${p.altitudeFt.toLocaleString('ca-ES')} ft` : '—'}</Table.Cell>
                         <Table.Cell textAlign="end" fontVariantNumeric="tabular-nums" display={{ base: 'none', md: 'table-cell' }}>{p.speedKt != null ? `${p.speedKt} kt` : '—'}</Table.Cell>
                         <Table.Cell textAlign="end" fontVariantNumeric="tabular-nums" display={{ base: 'none', md: 'table-cell' }}>{p.headingDeg != null ? `${p.headingDeg}°` : '—'}</Table.Cell>

@@ -1,4 +1,4 @@
-import { Badge, Box, Button, DataList, Drawer, Field, HStack, IconButton, Input, NativeSelect, Portal, Spinner, Stack, Text } from '@chakra-ui/react';
+import { Badge, Box, Button, DataList, Drawer, Field, HStack, IconButton, Input, NativeSelect, Portal, SegmentGroup, Spinner, Stack, Text } from '@chakra-ui/react';
 import { Chart, useChart } from '@chakra-ui/charts';
 import { useEffect, useMemo, useState } from 'react';
 import { CartesianGrid, Line, LineChart, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
@@ -6,6 +6,7 @@ import { LuCheck, LuDownload, LuX } from 'react-icons/lu';
 import type { Device, Reading } from '@shared/types';
 import { api } from '@/lib/api';
 import { CHARTABLE_FIELDS, fieldLabel, formatDateTime, formatMHz, formatReading, formatTime } from '@/lib/format';
+import { compassLabel } from '@/lib/geo';
 import { toaster } from '@/components/ui/toaster';
 import { Tooltip } from '@/components/ui/tooltip';
 import { RssiBar } from '@/components/RssiBar';
@@ -21,9 +22,11 @@ export function DeviceDrawer({ device, onClose, onUpdated }: DeviceDrawerProps) 
   const [alias, setAlias] = useState('');
   const [saving, setSaving] = useState(false);
   const [field, setField] = useState<string>('rssi');
+  const [bearing, setBearing] = useState('');
 
   useEffect(() => {
     setAlias(device?.alias ?? '');
+    setBearing(device?.bearingDeg == null ? '' : String(device.bearingDeg));
     setReadings(null);
     if (!device) return;
     let cancelled = false;
@@ -64,6 +67,17 @@ export function DeviceDrawer({ device, onClose, onUpdated }: DeviceDrawerProps) 
     }
   };
 
+  const patch = async (p: Parameters<typeof api.patchDevice>[1], okMsg: string) => {
+    if (!device) return;
+    try {
+      onUpdated(await api.patchDevice(device.id, p));
+      toaster.create({ title: okMsg, type: 'success', duration: 2000 });
+    } catch (e) {
+      toaster.create({ title: 'No s’ha pogut desar', description: (e as Error).message, type: 'error' });
+    }
+  };
+  const ownerValue = device?.owner ?? 'auto';
+
   const fields = device ? formatReading(device.lastData) : [];
 
   return (
@@ -94,6 +108,30 @@ export function DeviceDrawer({ device, onClose, onUpdated }: DeviceDrawerProps) 
                         </Tooltip>
                       </HStack>
                       <Field.HelperText>Un nom per reconèixer aquest dispositiu.</Field.HelperText>
+                    </Field.Root>
+
+                    <Field.Root>
+                      <Field.Label>Propietat</Field.Label>
+                      <SegmentGroup.Root size="sm" value={ownerValue} onValueChange={(e) => { const v = e.value; void patch({ owner: v === 'own' || v === 'other' ? v : null }, 'Propietat desada'); }}>
+                        <SegmentGroup.Indicator />
+                        <SegmentGroup.Items items={[
+                          { value: 'auto', label: `Automàtic (${device.owner ? '…' : device.likelyOwn ? 'meu' : 'veí'})` },
+                          { value: 'own', label: 'Meu' },
+                          { value: 'other', label: 'Veí' },
+                        ]} />
+                      </SegmentGroup.Root>
+                      <Field.HelperText>Determina si surt a l’auditoria de casa i el color al radar.</Field.HelperText>
+                    </Field.Root>
+
+                    <Field.Root>
+                      <Field.Label>Direcció manual (graus des del nord)</Field.Label>
+                      <HStack>
+                        <Input value={bearing} onChange={(e) => setBearing(e.target.value)} placeholder="p. ex. 135" inputMode="numeric" w="32"
+                          onKeyDown={(e) => { if (e.key === 'Enter') void patch({ bearingDeg: bearing.trim() === '' ? null : Number(bearing) }, 'Direcció desada'); }} />
+                        <Button size="sm" variant="outline" onClick={() => patch({ bearingDeg: bearing.trim() === '' ? null : Number(bearing) }, 'Direcció desada')}>Desa</Button>
+                        {device.bearingDeg != null && <Badge variant="subtle">{Math.round(device.bearingDeg)}° {compassLabel(device.bearingDeg)}</Badge>}
+                      </HStack>
+                      <Field.HelperText>Buit = desconeguda. Si trobes el pic amb una antena directiva, apunta’n l’angle i el radar el dibuixarà en aquella direcció.</Field.HelperText>
                     </Field.Root>
 
                     <DataList.Root orientation="horizontal" size="sm">

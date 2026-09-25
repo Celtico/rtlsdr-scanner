@@ -10,7 +10,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { toaster } from '@/components/ui/toaster';
 import { MODE_LABEL } from '@/lib/labels';
 
-const KIND_PALETTE: Record<Scan['kind'], string> = { survey: 'brand', devices: 'green', adsb: 'blue' };
+const KIND_PALETTE: Record<Scan['kind'], string> = { survey: 'brand', devices: 'green', adsb: 'blue', hunt: 'purple' };
 
 function describe(s: Scan): string {
   if (s.kind === 'survey' && 'fromHz' in s.config) {
@@ -19,12 +19,16 @@ function describe(s: Scan): string {
   if (s.kind === 'devices' && 'freqsHz' in s.config) {
     return s.config.freqsHz.map((f) => formatHzShort(f)).join(' + ');
   }
+  if (s.kind === 'hunt' && 'sampleRate' in s.config) {
+    return `${formatHzShort(s.config.freqHz)} · amplada ${formatHzShort(s.config.sampleRate)} · guany ${s.config.gainDb} dB`;
+  }
   return '1090 MHz';
 }
 
 function counts(s: Scan): string {
   if (s.kind === 'survey') return `${s.sweeps} escombrats · ${s.signals} senyals`;
   if (s.kind === 'devices') return `${s.devices} dispositius`;
+  if (s.kind === 'hunt') return 'RSSI en viu';
   return `${s.planes} avions`;
 }
 
@@ -42,6 +46,7 @@ export function History() {
       await loadScanSweeps(s.id);
       navigate('/espectre');
     } else if (s.kind === 'devices') navigate('/dispositius');
+    else if (s.kind === 'hunt') navigate('/hunt');
     else navigate('/avions');
   };
 
