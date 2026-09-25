@@ -1,5 +1,5 @@
 import { Badge, Box, Button, Card, Field, HStack, Input, NativeSelect, SimpleGrid, Stack, Text } from '@chakra-ui/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LuCircleStop, LuDownload, LuPlay } from 'react-icons/lu';
 import { DEFAULT_SURVEY, type Signal, type SurveyConfig } from '@shared/types';
 import { useSdr } from '@/store';
@@ -18,7 +18,9 @@ const PRESETS: { label: string; fromMHz: number; toMHz: number; stepKHz: number 
   { label: 'TDT (470–700 MHz, 100 kHz)', fromMHz: 470, toMHz: 700, stepKHz: 100 },
 ];
 
-const GAINS = [0, 9, 14.4, 20.7, 25.4, 29.7, 33.8, 37.2, 40.2, 43.4, 48, 49.6];
+// Real R820T gain steps (rtl_test -t). rtl_power rounds any value to the nearest one.
+const GAINS = [0, 0.9, 1.4, 2.7, 3.7, 7.7, 8.7, 12.5, 14.4, 15.7, 16.6, 19.7, 20.7, 22.9, 25.4, 28, 29.7, 32.8, 33.8, 36.4, 37.2, 38.6, 40.2, 42.1, 43.4, 43.9, 44.5, 48, 49.6];
+const nearestGain = (g: number) => GAINS.reduce((a, b) => (Math.abs(b - g) < Math.abs(a - g) ? b : a));
 
 interface Form { fromMHz: string; toMHz: string; stepKHz: string; gainDb: string; intervalS: string; thresholdDb: string }
 
@@ -42,6 +44,9 @@ export function Spectrum() {
   const [marked, setMarked] = useState<number | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const running = status?.mode === 'survey';
+  const runningConfig = running && status.config && 'fromHz' in status.config ? status.config : null;
+  // Mirror the running survey's configuration (it may have been started from another page or client).
+  useEffect(() => { if (runningConfig) setForm(toForm(runningConfig)); }, [runningConfig]);
   const bins = Math.round(((Number(form.toMHz) - Number(form.fromMHz)) * 1e6) / (Number(form.stepKHz) * 1e3));
   const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -83,7 +88,7 @@ export function Spectrum() {
               <Field.Root>
                 <Field.Label>Guany (dB)</Field.Label>
                 <NativeSelect.Root size="sm" disabled={running}>
-                  <NativeSelect.Field value={form.gainDb} onChange={set('gainDb')} aria-label="Guany">
+                  <NativeSelect.Field value={String(nearestGain(Number(form.gainDb)))} onChange={set('gainDb')} aria-label="Guany">
                     {GAINS.map((g) => <option key={g} value={g}>{g}</option>)}
                   </NativeSelect.Field>
                   <NativeSelect.Indicator />

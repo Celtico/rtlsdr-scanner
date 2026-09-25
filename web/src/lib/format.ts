@@ -2,10 +2,15 @@ export function formatMHz(hz: number, digits = 3): string {
   return `${(hz / 1e6).toFixed(digits)} MHz`;
 }
 
+/** Trims trailing decimal zeros only ("400.000" → "400", "1.500" → "1.5"). */
+function trimDecimals(s: string): string {
+  return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
+}
+
 export function formatHzShort(hz: number): string {
-  if (hz >= 1e9) return `${(hz / 1e9).toFixed(hz % 1e9 === 0 ? 0 : 2)} GHz`;
-  if (hz >= 1e6) return `${(hz / 1e6).toFixed(hz % 1e6 === 0 ? 0 : 3).replace(/\.?0+$/, '')} MHz`;
-  if (hz >= 1e3) return `${(hz / 1e3).toFixed(hz % 1e3 === 0 ? 0 : 2).replace(/\.?0+$/, '')} kHz`;
+  if (hz >= 1e9) return `${trimDecimals((hz / 1e9).toFixed(3))} GHz`;
+  if (hz >= 1e6) return `${trimDecimals((hz / 1e6).toFixed(3))} MHz`;
+  if (hz >= 1e3) return `${trimDecimals((hz / 1e3).toFixed(2))} kHz`;
   return `${Math.round(hz)} Hz`;
 }
 
@@ -110,7 +115,7 @@ export function formatReading(data: Record<string, unknown>): FormattedField[] {
         value = v === 1 || v === true ? 'OK' : 'Baixa';
       } else if (typeof v === 'number') {
         numeric = v;
-        value = `${Number.isInteger(v) ? v : v.toFixed(2).replace(/\.?0+$/, '')}${meta?.unit ? ` ${meta.unit}` : ''}`;
+        value = `${Number.isInteger(v) ? v : trimDecimals(v.toFixed(2))}${meta?.unit ? ` ${meta.unit}` : ''}`;
       } else if (typeof v === 'boolean') {
         value = v ? 'Sí' : 'No';
       } else {
