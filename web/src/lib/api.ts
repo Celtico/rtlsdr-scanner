@@ -1,5 +1,6 @@
 import type { Band, Device, ModeConfig, Plane, Reading, SatCapture, SatInfo, SatPass, Scan, Signal, Status, Sweep } from '@shared/types';
 import type { AuditVerdict } from '@shared/sdr/audit';
+import type { ChunkDelta, EmiReport } from '@shared/sdr/emi';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } });
@@ -26,6 +27,14 @@ export interface DabMux {
   services?: { sid: number | string; label: { label: string }; dls?: { label?: string }; components?: { subchannel?: { bitrate?: number; protection?: string } }[] }[];
 }
 
+export interface EmiResponse {
+  scanId: number | null;
+  report: EmiReport | null;
+  trend: { ts: number; floorDb: number }[];
+  baseline: { scanId: number; takenAt: number; label: string } | null;
+  delta: ChunkDelta[] | null;
+}
+
 export interface DevicePatch { alias?: string | null; owner?: 'own' | 'other' | null; bearingDeg?: number | null }
 
 export const api = {
@@ -40,6 +49,9 @@ export const api = {
   patchDevice: (id: number, patch: DevicePatch) => request<Device>(`/api/devices/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   setAlias: (id: number, alias: string | null) => request<Device>(`/api/devices/${id}`, { method: 'PATCH', body: JSON.stringify({ alias }) }),
   audit: () => request<AuditEntry[]>('/api/audit'),
+  emi: (scanId?: number) => request<EmiResponse>(`/api/emi${scanId ? `?scanId=${scanId}` : ''}`),
+  emiSetBaseline: (scanId: number, label: string) => request<{ scanId: number }>('/api/emi/baseline', { method: 'POST', body: JSON.stringify({ scanId, label }) }),
+  emiClearBaseline: () => request<{ ok: true }>('/api/emi/baseline', { method: 'DELETE' }),
   dabMux: () => request<{ running: boolean; ready?: boolean; mux: DabMux | null; log: string[] }>('/api/dab/mux'),
   dabChannel: (channel: string) => request<{ channel: string }>('/api/dab/channel', { method: 'POST', body: JSON.stringify({ channel }) }),
   dabMp3Url: (sid: string) => `/api/dab/mp3/${encodeURIComponent(sid)}`,

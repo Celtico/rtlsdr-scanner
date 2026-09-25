@@ -11,6 +11,7 @@ import { killAllSync } from './sdr/process.js';
 import { toCsv } from './export.js';
 import { classifyDevice, routineHours } from './sdr/audit.js';
 import { loadTles, predictAll, satInfo, SATELLITES } from './sdr/satellite.js';
+import { analyzeEmi, compareReports, floorTrend, type EmiReport } from './sdr/emi.js';
 import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
 import { normalize, sep } from 'node:path';
 import {
@@ -257,6 +258,44 @@ app.get<{ Params: { kind: ExportKind }; Querystring: { format?: string; scanId?:
     return reply.type('application/json').send(JSON.stringify(rows, null, 2));
   },
 );
+
+// ---------- EMI / noise ----------
+
+interface EmiBaseline { scanId: number; takenAt: number; label: string; report: EmiReport }
+const emiCache = new Map<string, EmiReport>();
+
+function emiReportFor(scanId: number): EmiReport | null {
+  const sweeps = db.listSweeps(scanId, 40);
+  if (!sweeps.length) return null;
+  const key = `${scanId}:${sweeps.length}:${sweeps[sweeps.length - 1]!.ts}`;
+  const cached = emiCache.get(key);
+  if (cached) return cached;
+  const report = analyzeEmi(sweeps);
+  if (report) { emiCache.clear(); emiCache.set(key, report); }
+  return report;
+}
+
+app.get<{ Querystring: { scanId?: string } }>('/api/emi', async (req) => {
+  const status = manager.status();
+  const scanId = req.query.scanId ? Number(req.query.scanId) : status.mode === 'survey' ? status.scanId : db.latestScan('survey')?.id;
+  if (scanId == null) return { scanId: null, report: null, trend: [], baseline: null, delta: null };
+  const report = emiReportFor(scanId);
+  const baseline = db.getSetting<EmiBaseline>('emi.baseline');
+  const trend = floorTrend(db.listSweeps(scanId, 400));
+  const delta = report && baseline ? compareReports(baseline.report, report) : null;
+  return { scanId, report, trend, baseline: baseline ? { scanId: baseline.scanId, takenAt: baseline.takenAt, label: baseline.label } : null, delta: delta && delta.length ? delta : null };
+});
+
+app.post<{ Body: { scanId?: number; label?: string } }>('/api/emi/baseline', async (req, reply) => {
+  const scanId = num(req.body?.scanId, NaN);
+  const report = Number.isFinite(scanId) ? emiReportFor(scanId) : null;
+  if (!report) return reply.code(400).send({ error: 'Escaneig sense escombrats' });
+  const baseline: EmiBaseline = { scanId, takenAt: Date.now(), label: typeof req.body?.label === 'string' ? req.body.label.trim().slice(0, 80) : '', report };
+  db.setSetting('emi.baseline', baseline);
+  return { scanId, takenAt: baseline.takenAt, label: baseline.label };
+});
+
+app.delete('/api/emi/baseline', async () => { db.deleteSetting('emi.baseline'); return { ok: true }; });
 
 // ---------- audio stream ----------
 

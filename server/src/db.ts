@@ -74,6 +74,10 @@ CREATE TABLE IF NOT EXISTS planes (
   vertical_rate_fpm INTEGER,
   scan_id INTEGER
 );
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS sat_captures (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   satellite TEXT NOT NULL,
@@ -380,6 +384,20 @@ export class Db {
   countPlanes(scanId?: number): number {
     if (scanId === undefined) return (this.db.prepare('SELECT COUNT(*) AS n FROM planes').get() as { n: number }).n;
     return (this.db.prepare('SELECT COUNT(*) AS n FROM planes WHERE scan_id = ?').get(scanId) as { n: number }).n;
+  }
+
+  // ---- settings ----
+  getSetting<T>(key: string): T | null {
+    const r = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+    return r ? (JSON.parse(r.value) as T) : null;
+  }
+
+  setSetting(key: string, value: unknown): void {
+    this.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, JSON.stringify(value));
+  }
+
+  deleteSetting(key: string): void {
+    this.db.prepare('DELETE FROM settings WHERE key = ?').run(key);
   }
 
   // ---- satellite captures ----

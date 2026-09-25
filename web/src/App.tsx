@@ -10,6 +10,7 @@ import { Audit } from '@/pages/Audit';
 import { Hunt } from '@/pages/Hunt';
 import { Satellites } from '@/pages/Satellites';
 import { Dab } from '@/pages/Dab';
+import { Noise } from '@/pages/Noise';
 
 export function App() {
   return (
@@ -24,6 +25,7 @@ export function App() {
         <Route path="hunt" element={<Hunt />} />
         <Route path="satellits" element={<Satellites />} />
         <Route path="dab" element={<Dab />} />
+        <Route path="soroll" element={<Noise />} />
         <Route path="historic" element={<History />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
