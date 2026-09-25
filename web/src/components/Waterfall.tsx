@@ -7,8 +7,10 @@ const MAX_COLS = 1600;
 const SPECTRUM_H = 110;
 const BAND_H = 18;
 const AXIS_H = 20;
-const ROW_H = 3;
-const MIN_WF_H = 160;
+const MIN_WF_H = 180;
+const MAX_WF_H = 900;
+/** Row height adapts: few sweeps get tall rows, many sweeps get 3 px rows. */
+const rowHeightFor = (rows: number) => Math.max(3, Math.min(20, Math.floor(MIN_WF_H / Math.max(1, rows))));
 
 // Colour LUT: dark → blue → cyan → yellow → red → white.
 const STOPS: [number, [number, number, number]][] = [
@@ -90,7 +92,8 @@ export function Waterfall({ sweeps, bands, markedHz, onPick }: WaterfallProps) {
     return () => ro.disconnect();
   }, []);
 
-  const wfH = Math.max(MIN_WF_H, rows.length * ROW_H);
+  const ROW_H = rowHeightFor(rows.length);
+  const wfH = Math.min(MAX_WF_H, Math.max(MIN_WF_H, rows.length * ROW_H));
   const totalH = SPECTRUM_H + BAND_H + AXIS_H + wfH;
 
   // Draw.
@@ -240,10 +243,11 @@ export function Waterfall({ sweeps, bands, markedHz, onPick }: WaterfallProps) {
       ctx.fillStyle = '#fff';
       ctx.fillText(label, lx, 13);
     }
-  }, [rows, grid, range, bands, markedHz, cssW, totalH]);
+  }, [rows, grid, range, bands, markedHz, cssW, totalH, ROW_H]);
 
   const locate = useCallback((e: React.MouseEvent<HTMLCanvasElement>): Tip | null => {
     if (!grid) return null;
+    const ROW_H = rowHeightFor(rows.length);
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
