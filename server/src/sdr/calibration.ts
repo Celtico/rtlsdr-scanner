@@ -55,7 +55,8 @@ export function offsetFor(cal: Calibration | null, gainDb: number, scale: CalSca
     const shift = nearest.gainDb - gainDb; // more gain → higher reading → more negative offset
     return { offsetDb: r1(nearest.offsetDb + shift), source: 'derived', uncertaintyDb: 3 + Math.min(6, Math.abs(shift) / 5), fromGainDb: nearest.gainDb };
   }
-  if (scale === 'iq') return { offsetDb: r1(ESTIMATED_IQ_OFFSET_AT_MAX_GAIN - (gainDb - MAX_GAIN)), source: 'estimated', uncertaintyDb: 10, fromGainDb: null };
+  // Full scale never sits above about −5 dBm at the antenna, whatever the (low) gain: cap the linear estimate.
+  if (scale === 'iq') return { offsetDb: r1(Math.min(-5, ESTIMATED_IQ_OFFSET_AT_MAX_GAIN - (gainDb - MAX_GAIN))), source: 'estimated', uncertaintyDb: 10, fromGainDb: null };
   return { offsetDb: r1(ESTIMATED_OFFSET_AT_40 - (gainDb - 40)), source: 'estimated', uncertaintyDb: 6, fromGainDb: null };
 }
 

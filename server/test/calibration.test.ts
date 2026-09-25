@@ -36,6 +36,7 @@ describe('calibration scales', () => {
     expect(offsetFor(null, 29.7, 'iq')).toMatchObject({ source: 'estimated', uncertaintyDb: 10 });
     expect(offsetFor(null, 49.6, 'iq').offsetDb).toBe(-30);
     expect(offsetFor(null, 29.7, 'iq').offsetDb).toBeCloseTo(-10.1, 1);
+    expect(offsetFor(null, 0, 'iq').offsetDb).toBe(-5); // capped: full scale is never above −5 dBm
     let cal = upsertEntry(null, { scale: 'iq', gainDb: 29.7, freqHz: 868_100_000, measuredDb: -42, refDbm: -101, note: 'gateway' });
     expect(offsetFor(cal, 29.7, 'iq')).toMatchObject({ source: 'calibrated', offsetDb: -59 });
     expect(offsetFor(cal, 29.7, 'power').source).toBe('estimated'); // iq entry must not leak into power
