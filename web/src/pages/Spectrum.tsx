@@ -7,6 +7,8 @@ import { api } from '@/lib/api';
 import { formatTime } from '@/lib/format';
 import { Waterfall } from '@/components/Waterfall';
 import { audioEngine, useAudioEngine } from '@/lib/audioEngine';
+import { useUnits } from '@/lib/units';
+import { UnitsToggle } from '@/components/UnitsToggle';
 import { SignalsTable } from '@/components/SignalsTable';
 
 const PRESETS: { label: string; fromMHz: number; toMHz: number; stepKHz: number }[] = [
@@ -41,7 +43,8 @@ function toConfig(f: Form): SurveyConfig {
 }
 
 export function Spectrum() {
-  const { status, sweeps, signals, signalsScanId, bands, setMode, stop, busy } = useSdr();
+  const { status, sweeps, signals, signalsScanId, signalsGainDb, bands, setMode, stop, busy } = useSdr();
+  const u = useUnits();
   const [form, setForm] = useState<Form>(() => toForm(DEFAULT_SURVEY));
   const [marked, setMarked] = useState<number | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -134,12 +137,12 @@ export function Spectrum() {
         </Card.Body>
       </Card.Root>
 
-      <Waterfall sweeps={sweeps} bands={bands} markedHz={marked} onPick={(hz) => { setMarked(hz); setSelected(null); }} />
+      <Waterfall sweeps={sweeps} bands={bands} markedHz={marked} onPick={(hz) => { setMarked(hz); setSelected(null); }} dbOffset={u.units === 'dbm' ? u.offset(signalsGainDb).offsetDb : null} />
 
       <Card.Root size="sm" minW="0" overflow="hidden">
         <Card.Header>
           <HStack justify="space-between" flexWrap="wrap">
-            <Card.Title>Senyals ({signals.length})</Card.Title>
+            <HStack gap="3"><Card.Title>Senyals ({signals.length})</Card.Title><UnitsToggle gainDb={signalsGainDb} /></HStack>
             <Text fontSize="sm" color="fg.muted">Clica un senyal per marcar-lo al waterfall. Les emissores FM tenen botó d’escolta (atura l’escombrat: el dongle només fa una cosa alhora).</Text>
           </HStack>
         </Card.Header>
@@ -152,6 +155,7 @@ export function Spectrum() {
               playingHz={audio.playing ? audio.freqHz : null}
               onPlay={(s) => { pick(s); void audioEngine.play(s.freqHz); }}
               onStop={() => audioEngine.stop()}
+              fmtDb={(db) => u.fmt(db, signalsGainDb)}
             />
           </Box>
         </Card.Body>

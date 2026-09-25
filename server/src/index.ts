@@ -11,7 +11,8 @@ import { killAllSync } from './sdr/process.js';
 import { toCsv } from './export.js';
 import { classifyDevice, routineHours } from './sdr/audit.js';
 import { loadTles, predictAll, satInfo, SATELLITES } from './sdr/satellite.js';
-import { analyzeEmi, compareReports, floorTrend, type EmiReport } from './sdr/emi.js';
+import { analyzeEmi, compareReports, floorTrend, medianSpectrum, type EmiReport } from './sdr/emi.js';
+import { removeEntry, upsertEntry, type Calibration } from './sdr/calibration.js';
 import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
 import { normalize, sep } from 'node:path';
 import {
@@ -258,6 +259,47 @@ app.get<{ Params: { kind: ExportKind }; Querystring: { format?: string; scanId?:
     return reply.type('application/json').send(JSON.stringify(rows, null, 2));
   },
 );
+
+// ---------- calibration (relative dB → dBm) ----------
+
+app.get('/api/calibration', async () => db.getSetting<Calibration>('calibration') ?? { entries: [] });
+
+/** Reading at a frequency in a scan (max within ±window of the median spectrum), to fill the calibration form. */
+app.get<{ Querystring: { scanId?: string; freqHz?: string; windowHz?: string } }>('/api/calibration/reading', async (req, reply) => {
+  const scanId = num(req.query.scanId, NaN);
+  const freqHz = num(req.query.freqHz, NaN);
+  if (!Number.isFinite(scanId) || !Number.isFinite(freqHz)) return reply.code(400).send({ error: 'scanId i freqHz obligatoris' });
+  const scan = db.getScan(scanId);
+  const spec = medianSpectrum(db.listSweeps(scanId, 40));
+  if (!scan || !spec || !('gainDb' in scan.config) || !('fromHz' in scan.config)) return reply.code(404).send({ error: 'Escaneig sense escombrats' });
+  const win = num(req.query.windowHz, 50_000);
+  const i0 = Math.max(0, Math.floor((freqHz - win - spec.lowHz) / spec.stepHz));
+  const i1 = Math.min(spec.dbs.length - 1, Math.ceil((freqHz + win - spec.lowHz) / spec.stepHz));
+  if (i1 < i0) return reply.code(400).send({ error: 'La freqüència queda fora de l’escombrat' });
+  let best = -Infinity;
+  let bestHz = freqHz;
+  for (let i = i0; i <= i1; i++) { const v = spec.dbs[i]!; if (Number.isFinite(v) && v > best) { best = v; bestHz = spec.lowHz + i * spec.stepHz; } }
+  return { scanId, gainDb: scan.config.gainDb, freqHz: Math.round(bestHz), measuredDb: Math.round(best * 10) / 10, stepHz: spec.stepHz };
+});
+
+app.post<{ Body: { gainDb?: number; freqHz?: number; measuredDb?: number; refDbm?: number; note?: string } }>('/api/calibration', async (req, reply) => {
+  const b = req.body ?? {};
+  const gainDb = num(b.gainDb, NaN);
+  const freqHz = num(b.freqHz, NaN);
+  const measuredDb = num(b.measuredDb, NaN);
+  const refDbm = num(b.refDbm, NaN);
+  if (![gainDb, freqHz, measuredDb, refDbm].every(Number.isFinite)) return reply.code(400).send({ error: 'Calen guany, freqüència, lectura i referència' });
+  if (refDbm > 10 || refDbm < -150) return reply.code(400).send({ error: 'Referència fora de rang (−150…+10 dBm)' });
+  const cal = upsertEntry(db.getSetting<Calibration>('calibration'), { gainDb, freqHz: Math.round(freqHz), measuredDb, refDbm, note: typeof b.note === 'string' ? b.note.slice(0, 80) : '' });
+  db.setSetting('calibration', cal);
+  return cal;
+});
+
+app.delete<{ Params: { gain: string } }>('/api/calibration/:gain', async (req) => {
+  const cal = removeEntry(db.getSetting<Calibration>('calibration'), num(req.params.gain, NaN));
+  db.setSetting('calibration', cal);
+  return cal;
+});
 
 // ---------- EMI / noise ----------
 

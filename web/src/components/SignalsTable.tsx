@@ -26,9 +26,11 @@ export interface SignalsTableProps {
   playingHz?: number | null;
   onPlay?: (s: Signal) => void;
   onStop?: () => void;
+  /** Converts a relative dB reading to the displayed unit (identity when relative). */
+  fmtDb?: (db: number) => string;
 }
 
-export function SignalsTable({ signals, selectedId, onSelect, playingHz = null, onPlay, onStop }: SignalsTableProps) {
+export function SignalsTable({ signals, selectedId, onSelect, playingHz = null, onPlay, onStop, fmtDb = (db) => `${db.toFixed(1)} dB` }: SignalsTableProps) {
   const [sort, setSort] = useState<{ key: Key; dir: 'asc' | 'desc' }>({ key: 'excessDb', dir: 'desc' });
 
   const rows = useMemo(() => {
@@ -103,7 +105,7 @@ export function SignalsTable({ signals, selectedId, onSelect, playingHz = null, 
               )}
               <Table.Cell textAlign="end" fontFamily="mono" fontVariantNumeric="tabular-nums">{formatMHz(s.freqHz)}</Table.Cell>
               <Table.Cell textAlign="end" fontVariantNumeric="tabular-nums">{formatWidth(s.widthHz)}</Table.Cell>
-              <Table.Cell textAlign="end" fontVariantNumeric="tabular-nums">{s.peakDb.toFixed(1)} dB</Table.Cell>
+              <Table.Cell textAlign="end" fontVariantNumeric="tabular-nums">{fmtDb(s.peakDb)}</Table.Cell>
               <Table.Cell textAlign="end" fontVariantNumeric="tabular-nums">
                 <Badge colorPalette={s.excessDb > 25 ? 'red' : s.excessDb > 15 ? 'orange' : 'gray'} variant="subtle">+{s.excessDb.toFixed(1)}</Badge>
               </Table.Cell>

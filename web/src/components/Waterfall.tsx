@@ -50,11 +50,13 @@ export interface WaterfallProps {
   bands: Band[];
   markedHz: number | null;
   onPick?: (freqHz: number) => void;
+  /** When set, the dB grid and tooltip show dBm = value + offset. */
+  dbOffset?: number | null;
 }
 
 interface Tip { x: number; y: number; freqHz: number; db: number | null; ts: number | null; band: Band | null }
 
-export function Waterfall({ sweeps, bands, markedHz, onPick }: WaterfallProps) {
+export function Waterfall({ sweeps, bands, markedHz, onPick, dbOffset = null }: WaterfallProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [tip, setTip] = useState<Tip | null>(null);
@@ -133,7 +135,7 @@ export function Waterfall({ sweeps, bands, markedHz, onPick }: WaterfallProps) {
         ctx.globalAlpha = 0.7;
         ctx.fillStyle = muted;
         ctx.font = '10px system-ui';
-        ctx.fillText(`${db} dB`, 4, y - 2);
+        ctx.fillText(dbOffset === null ? `${db} dB` : `${Math.round(db + dbOffset)} dBm`, 4, y - 2);
         ctx.globalAlpha = 0.25;
       }
       ctx.globalAlpha = 1;
@@ -243,7 +245,7 @@ export function Waterfall({ sweeps, bands, markedHz, onPick }: WaterfallProps) {
       ctx.fillStyle = '#fff';
       ctx.fillText(label, lx, 13);
     }
-  }, [rows, grid, range, bands, markedHz, cssW, totalH, ROW_H]);
+  }, [rows, grid, range, bands, markedHz, cssW, totalH, ROW_H, dbOffset]);
 
   const locate = useCallback((e: React.MouseEvent<HTMLCanvasElement>): Tip | null => {
     if (!grid) return null;
@@ -316,7 +318,7 @@ export function Waterfall({ sweeps, bands, markedHz, onPick }: WaterfallProps) {
           whiteSpace="nowrap"
         >
           <Text fontWeight="semibold" fontFamily="mono">{formatMHz(tip.freqHz)}</Text>
-          <Text color="fg.muted">{tip.db === null ? '—' : `${tip.db.toFixed(1)} dB`}{tip.ts ? ` · ${formatTime(tip.ts)}` : ''}</Text>
+          <Text color="fg.muted">{tip.db === null ? '—' : dbOffset === null ? `${tip.db.toFixed(1)} dB` : `${(tip.db + dbOffset).toFixed(1)} dBm`}{tip.ts ? ` · ${formatTime(tip.ts)}` : ''}</Text>
           {tip.band && <Text color={tip.band.restricted ? 'orange.fg' : 'brand.fg'}>{tip.band.name}</Text>}
         </Box>
       )}

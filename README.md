@@ -12,6 +12,7 @@ Aplicació web local per descobrir quins senyals de ràdio hi ha a casa amb un *
 - **Ràdio FM**: botó d'escolta als senyals de la banda FM (`rtl_fm` → PCM → Web Audio). Només radiodifusió: cap altra banda es reprodueix.
 - **DAB**: ràdio digital descodificada per `welle-cli` **dins de Docker**; el Mac només executa `rtl_tcp` (osmocom) i el contenidor s'hi connecta per xarxa. Llista de programes i àudio MP3 a través del servidor.
 - **Soroll (EMI)**: contaminació electromagnètica local a partir dels escombrats: perfil del soroll de fons per trams, pintes d'espuris (fonts commutades), trams de banda ampla (PLC, motors), portadores fixes, soroll per banda, evolució temporal i comparació abans/després amb una línia base per trobar l'aparell que embruta l'espectre. Són dB relatius sense calibrar: no mesura V/m ni límits de salut.
+- **Calibratge a dBm (nivell 2)**: a la secció Soroll, amb un senyal de nivell conegut (generador, font de soroll o un mesurador extern): l'app agafa la lectura de l'escombrat i desa l'offset per guany; els altres guanys es deriven. Sense referència, estimació amb valors típics del R820T (±6 dB). Commutador dB/dBm a Soroll i Espectre. No dona V/m ni exposició (nivell 3: caldria el factor d'antena).
 - **Històric**: tots els escaneigs es desen a SQLite i es poden tornar a obrir i exportar (CSV/JSON).
 
 ## Requisits
@@ -56,6 +57,7 @@ server/src/
   sdr/audit.ts      classificació d'exposició (en clar / ID / codi variable) i rutines
   sdr/satellite.ts  TLE (Celestrak, cau 12 h), predicció de passos SGP4, ordre de SatDump, galeria
   sdr/emi.ts        anàlisi de soroll: trams, pintes, banda ampla, portadores, comparació amb línia base
+  sdr/calibration.ts offset dB→dBm per guany (calibrat, derivat o estimat)
   sdr/bands.ts      taula de bandes
 server/test/        tests + fixtures capturades amb el dongle
 web/src/
@@ -73,6 +75,7 @@ docker/decoders/    Dockerfile dels descodificadors (welle-cli, rtl-sdr, rtl_433
 | POST | `/api/mode` | `{ mode: 'idle' \| 'survey' \| 'devices' \| 'adsb' \| 'hunt' \| 'audio' \| 'dab', config }` (el mode `satellite` es llança des de les captures) |
 | GET | `/api/audio/stream` | PCM s16le mono 48 kHz de l'emissora FM en reproducció |
 | GET / POST / DELETE | `/api/emi?scanId=`, `/api/emi/baseline` | anàlisi EMI d'un escombrat, fixar/esborrar la línia base |
+| GET / POST / DELETE | `/api/calibration`, `/api/calibration/reading?scanId&freqHz`, `/api/calibration/:gain` | referències de calibratge, lectura d'un escombrat a una freqüència |
 | GET / POST | `/api/dab/channels`, `/api/dab/mux`, `/api/dab/channel`, `/api/dab/mp3/:sid` | blocs, estat del múltiplex (proxy de welle-cli), canvi de bloc, àudio d'un programa |
 | POST | `/api/dongle/check` | executa `rtl_test -t` (només en mode inactiu) |
 | GET | `/api/bands` | taula de bandes |

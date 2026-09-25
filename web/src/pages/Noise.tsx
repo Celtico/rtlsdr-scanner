@@ -9,6 +9,9 @@ import { api, type EmiResponse } from '@/lib/api';
 import { formatAgo, formatDateTime, formatHzShort, formatMHz, formatTime } from '@/lib/format';
 import { toaster } from '@/components/ui/toaster';
 import { Tooltip } from '@/components/ui/tooltip';
+import { useUnits } from '@/lib/units';
+import { UnitsToggle } from '@/components/UnitsToggle';
+import { CalibrationCard } from '@/components/CalibrationCard';
 
 const PRESETS = [
   { label: 'EMI VHF (24–250 MHz, pas 10 kHz): fonts commutades, PLC, pantalles', fromHz: 24e6, toHz: 250e6, stepHz: 10e3 },
@@ -24,6 +27,7 @@ export function Noise() {
   const [label, setLabel] = useState('');
   const [preset, setPreset] = useState(0);
   const running = status?.mode === 'survey';
+  const u = useUnits();
 
   const loadScans = useCallback(async () => {
     const all = (await api.scans()).filter((s) => s.kind === 'survey' && s.sweeps > 0);
@@ -42,12 +46,14 @@ export function Noise() {
   useEffect(() => { void load(); }, [load, status?.counters.sweeps]);
 
   const report = data?.report ?? null;
+  const scanGain = useMemo(() => { const s = scans.find((x) => x.id === scanId); return s && 'gainDb' in s.config ? s.config.gainDb : null; }, [scans, scanId]);
+  const cv = useCallback((db: number) => u.value(db, scanGain), [u, scanGain]);
   const chunkRows = useMemo(() => (report?.chunks ?? []).map((c) => {
     const d = data?.delta?.find((x) => x.fromHz === c.fromHz);
-    return { mhz: `${Math.round(c.fromHz / 1e6)}`, floor: c.floorDb, baseline: d?.baselineDb ?? null, p90: c.p90Db };
-  }), [report, data]);
+    return { mhz: `${Math.round(c.fromHz / 1e6)}`, floor: cv(c.floorDb), baseline: d?.baselineDb != null ? cv(d.baselineDb) : null, p90: cv(c.p90Db) };
+  }), [report, data, cv]);
   const chunkChart = useChart({ data: chunkRows, series: [{ name: 'floor', color: 'brand.solid', label: 'Soroll ara' }, { name: 'baseline', color: 'gray.solid', label: 'Línia base' }] });
-  const trendRows = useMemo(() => (data?.trend ?? []).map((t) => ({ ts: t.ts, floor: t.floorDb })), [data]);
+  const trendRows = useMemo(() => (data?.trend ?? []).map((t) => ({ ts: t.ts, floor: cv(t.floorDb) })), [data, cv]);
   const trendChart = useChart({ data: trendRows, series: [{ name: 'floor', color: 'orange.solid', label: 'Soroll de fons' }] });
   const bandRows = useMemo(() => (report?.bands ?? []).slice().sort((a, b) => b.aboveMinDb - a.aboveMinDb), [report]);
   const deltaSorted = useMemo(() => (data?.delta ?? []).slice().sort((a, b) => a.deltaDb - b.deltaDb), [data]);
@@ -147,7 +153,7 @@ export function Noise() {
       ) : (
         <>
           <SimpleGrid columns={{ base: 2, md: 4 }} gap="3">
-            <Card.Root size="sm"><Card.Body><Text fontSize="xs" color="fg.muted">Soroll de fons global</Text><Text fontSize="2xl" fontWeight="bold">{report.floorDb} dB</Text><Text fontSize="xs" color="fg.muted">tram més net {report.minChunkFloorDb} dB · {report.sweeps} escombrats</Text></Card.Body></Card.Root>
+            <Card.Root size="sm"><Card.Body><HStack justify="space-between"><Text fontSize="xs" color="fg.muted">Soroll de fons global</Text><UnitsToggle gainDb={scanGain} /></HStack><Text fontSize="2xl" fontWeight="bold">{u.fmt(report.floorDb, scanGain)}</Text><Text fontSize="xs" color="fg.muted">tram més net {u.fmt(report.minChunkFloorDb, scanGain)} · {report.sweeps} escombrats{u.units === 'dbm' ? ` · per bin de ${formatHzShort(report.stepHz)}` : ''}</Text></Card.Body></Card.Root>
             <Card.Root size="sm"><Card.Body><Text fontSize="xs" color="fg.muted">Pintes d’espuris</Text><Text fontSize="2xl" fontWeight="bold" color={report.combs.length ? 'orange.fg' : 'fg'}>{report.combs.length}</Text><Text fontSize="xs" color="fg.muted">fonts commutades probables</Text></Card.Body></Card.Root>
             <Card.Root size="sm"><Card.Body><Text fontSize="xs" color="fg.muted">Trams de banda ampla</Text><Text fontSize="2xl" fontWeight="bold" color={report.broadband.length ? 'orange.fg' : 'fg'}>{report.broadband.length}</Text><Text fontSize="xs" color="fg.muted">soroll pujat ≥ 6 dB en ≥ 15 MHz</Text></Card.Body></Card.Root>
             <Card.Root size="sm"><Card.Body><Text fontSize="xs" color="fg.muted">Portadores fixes</Text><Text fontSize="2xl" fontWeight="bold">{report.carriers.length}</Text><Text fontSize="xs" color="fg.muted">fora de bandes de servei</Text></Card.Body></Card.Root>
@@ -170,7 +176,7 @@ export function Noise() {
           <Card.Root size="sm" minW="0" overflow="hidden">
             <Card.Header>
               <Card.Title>Perfil del soroll de fons</Card.Title>
-              <Card.Description>Percentil 20 de cada tram (ignora els senyals que hi ha a sobre). Els trams alts són els contaminats.{data?.delta ? ' En gris, la línia base.' : ''}</Card.Description>
+              <Card.Description>Percentil 20 de cada tram (ignora els senyals que hi ha a sobre), en {u.unitLabel}. Els trams alts són els contaminats.{data?.delta ? ' En gris, la línia base.' : ''} {u.units === 'dbm' && <Text as="span" color="orange.fg">{u.note(scanGain)}.</Text>}</Card.Description>
             </Card.Header>
             <Card.Body>
               <Chart.Root chart={chunkChart} h="64">
@@ -179,7 +185,7 @@ export function Noise() {
                   <XAxis dataKey={chunkChart.key('mhz')} stroke={chunkChart.color('border')} fontSize={10} minTickGap={24} tickFormatter={(v: string) => `${v} M`} />
                   <YAxis stroke={chunkChart.color('border')} fontSize={10} domain={['auto', 'auto']} />
                   <RTooltip content={<Chart.Tooltip />} cursor={{ fill: chunkChart.color('bg.muted') }} />
-                  <ReferenceLine y={report.minChunkFloorDb} stroke={chunkChart.color('fg.muted')} strokeDasharray="4 4" />
+                  <ReferenceLine y={cv(report.minChunkFloorDb)} stroke={chunkChart.color('fg.muted')} strokeDasharray="4 4" />
                   {data?.delta && <Bar dataKey={chunkChart.key('baseline')} fill={chunkChart.color('gray.solid')} isAnimationActive={false} name="Línia base" />}
                   <Bar dataKey={chunkChart.key('floor')} fill={chunkChart.color('brand.solid')} isAnimationActive={false} name="Soroll ara" />
                 </BarChart>
@@ -210,7 +216,7 @@ export function Noise() {
                     {report.carriers.slice(0, 8).map((c, i) => (
                       <HStack key={`p${i}`} align="flex-start" gap="3">
                         <Badge colorPalette="gray" variant="subtle" minW="20" justifyContent="center">portadora</Badge>
-                        <Box><Text fontWeight="semibold" fontFamily="mono">{formatMHz(c.freqHz)} · +{c.excessDb} dB · {formatHzShort(c.widthHz)}</Text><Text color="fg.muted">{c.source}</Text></Box>
+                        <Box><Text fontWeight="semibold" fontFamily="mono">{formatMHz(c.freqHz)} · +{c.excessDb} dB sobre el fons{u.units === 'dbm' ? ` (≈ ${u.fmt(report.floorDb + c.excessDb, scanGain)})` : ''} · {formatHzShort(c.widthHz)}</Text><Text color="fg.muted">{c.source}</Text></Box>
                       </HStack>
                     ))}
                   </Stack>
@@ -236,6 +242,8 @@ export function Noise() {
             </Card.Root>
           </SimpleGrid>
 
+          <CalibrationCard scans={scans} />
+
           <Card.Root size="sm" minW="0" overflow="hidden">
             <Card.Header><Card.Title>Soroll per banda</Card.Title><Card.Description>Ordenat pel que sobresurt del tram més net. Les bandes de mòbil i TDT pugen per les emissions dels operadors, no per contaminació local.</Card.Description></Card.Header>
             <Card.Body p="0">
@@ -244,9 +252,9 @@ export function Noise() {
                   <Table.Header><Table.Row><Table.ColumnHeader>Banda</Table.ColumnHeader><Table.ColumnHeader textAlign="end">Soroll</Table.ColumnHeader><Table.ColumnHeader textAlign="end">Sobre el mínim</Table.ColumnHeader><Table.ColumnHeader>Lectura</Table.ColumnHeader></Table.Row></Table.Header>
                   <Table.Body>
                     {bandRows.map((b) => (
-                      <Table.Row key={b.band}>
+                      <Table.Row key={`${b.band}-${b.fromHz}`}>
                         <Table.Cell><HStack gap="2"><Box color="fg.muted"><LuActivity /></Box><Text>{b.band}</Text></HStack></Table.Cell>
-                        <Table.Cell textAlign="end" fontVariantNumeric="tabular-nums">{b.floorDb} dB</Table.Cell>
+                        <Table.Cell textAlign="end" fontVariantNumeric="tabular-nums">{u.fmt(b.floorDb, scanGain)}</Table.Cell>
                         <Table.Cell textAlign="end"><Badge colorPalette={b.aboveMinDb >= 10 ? 'red' : b.aboveMinDb >= 5 ? 'orange' : 'green'} variant="subtle">+{b.aboveMinDb} dB</Badge></Table.Cell>
                         <Table.Cell fontSize="xs" color="fg.muted">{b.restricted || /TDT|FM|DAB/.test(b.band) ? 'emissions dels operadors (no és soroll local)' : b.aboveMinDb >= 10 ? 'molt per sobre del mínim: revisa aparells propers' : b.aboveMinDb >= 5 ? 'lleugerament contaminada' : 'neta'}</Table.Cell>
                       </Table.Row>

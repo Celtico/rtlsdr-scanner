@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { useSdrSocket } from '@/hooks/useSdrSocket';
 import { toaster } from '@/components/ui/toaster';
 import { pushHuntLevel, resetHunt } from '@/lib/huntFeed';
+import type { Calibration } from '@shared/sdr/calibration';
 
 const MAX_SWEEPS = 300;
 
@@ -22,6 +23,12 @@ export interface SdrStore {
   devices: Device[];
   planes: Plane[];
   satCaptures: SatCapture[];
+  /** Tuner gain of the scan the current signals/sweeps belong to (for dBm conversion). */
+  signalsGainDb: number | null;
+  calibration: Calibration | null;
+  units: 'rel' | 'dbm';
+  setUnits: (u: 'rel' | 'dbm') => void;
+  refreshCalibration: () => Promise<void>;
   busy: boolean;
   setMode: (mc: ModeConfig) => Promise<boolean>;
   stop: () => Promise<boolean>;
@@ -42,6 +49,11 @@ export function SdrProvider({ children }: { children: ReactNode }) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [planes, setPlanes] = useState<Plane[]>([]);
   const [satCaptures, setSatCaptures] = useState<SatCapture[]>([]);
+  const [signalsGainDb, setSignalsGainDb] = useState<number | null>(null);
+  const [calibration, setCalibration] = useState<Calibration | null>(null);
+  const [units, setUnitsState] = useState<'rel' | 'dbm'>(() => { try { return localStorage.getItem('sdr-units') === 'dbm' ? 'dbm' : 'rel'; } catch { return 'rel'; } });
+  const setUnits = useCallback((u: 'rel' | 'dbm') => { setUnitsState(u); try { localStorage.setItem('sdr-units', u); } catch { /* ignore */ } }, []);
+  const refreshCalibration = useCallback(async () => { try { setCalibration(await api.calibration()); } catch { /* keep */ } }, []);
   const [busy, setBusy] = useState(false);
   const lastErrorAt = useRef(0);
   const trailsRef = useRef(new Map<string, TrailPoint[]>());
@@ -60,6 +72,7 @@ export function SdrProvider({ children }: { children: ReactNode }) {
     switch (m.type) {
       case 'status':
         setStatus(m.status);
+        if (m.status.mode === 'survey' && m.status.config && 'fromHz' in m.status.config) setSignalsGainDb(m.status.config.gainDb);
         break;
       case 'survey:sweep':
         setSweeps((prev) => {
@@ -133,10 +146,11 @@ export function SdrProvider({ children }: { children: ReactNode }) {
   const refreshPlanes = useCallback(async () => setPlanes(await api.planes()), []);
 
   const loadScanSweeps = useCallback(async (scanId: number) => {
-    const [sw, sg] = await Promise.all([api.sweeps(scanId), api.signals(scanId)]);
+    const [sw, sg, scan] = await Promise.all([api.sweeps(scanId), api.signals(scanId), api.scan(scanId).catch(() => null)]);
     setSweeps(sw.sweeps);
     setSignals(sg.signals);
     setSignalsScanId(scanId);
+    if (scan && 'gainDb' in scan.config && 'fromHz' in scan.config) setSignalsGainDb(scan.config.gainDb);
   }, []);
 
   // Initial load.
@@ -146,19 +160,21 @@ export function SdrProvider({ children }: { children: ReactNode }) {
         const [st, b] = await Promise.all([api.status(), api.bands()]);
         setStatus(st);
         setBands(b);
+        void refreshCalibration();
         await Promise.all([refreshDevices(), refreshPlanes(), api.satCaptures().then(setSatCaptures)]);
         const sg = await api.signals();
         setSignals(sg.signals);
         setSignalsScanId(sg.scanId);
         if (sg.scanId != null) {
-          const sw = await api.sweeps(sg.scanId);
+          const [sw, scan] = await Promise.all([api.sweeps(sg.scanId), api.scan(sg.scanId).catch(() => null)]);
           setSweeps(sw.sweeps);
+          if (scan && 'gainDb' in scan.config && 'fromHz' in scan.config) setSignalsGainDb(scan.config.gainDb);
         }
       } catch (e) {
         toaster.create({ title: 'No es pot contactar amb el servidor', description: (e as Error).message, type: 'error' });
       }
     })();
-  }, [refreshDevices, refreshPlanes]);
+  }, [refreshDevices, refreshPlanes, refreshCalibration]);
 
   const setMode = useCallback(async (mc: ModeConfig) => {
     setBusy(true);
@@ -169,6 +185,7 @@ export function SdrProvider({ children }: { children: ReactNode }) {
         setSweeps([]);
         setSignals([]);
         setSignalsScanId(st.scanId);
+        setSignalsGainDb(mc.config.gainDb);
       }
       if (mc.mode === 'hunt') resetHunt();
       return true;
@@ -184,8 +201,9 @@ export function SdrProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<SdrStore>(() => ({
     connected, status, bands, sweeps, signals, signalsScanId, devices, planes, satCaptures, busy, trails: trailsRef.current,
+    signalsGainDb, calibration, units, setUnits, refreshCalibration,
     setMode, stop, refreshDevices, refreshPlanes, updateDevice: upsertDevice, loadScanSweeps,
-  }), [connected, status, bands, sweeps, signals, signalsScanId, devices, planes, satCaptures, busy, setMode, stop, refreshDevices, refreshPlanes, upsertDevice, loadScanSweeps]);
+  }), [connected, status, bands, sweeps, signals, signalsScanId, devices, planes, satCaptures, busy, setMode, stop, refreshDevices, refreshPlanes, upsertDevice, loadScanSweeps, signalsGainDb, calibration, units, setUnits, refreshCalibration]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
