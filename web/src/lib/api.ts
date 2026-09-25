@@ -60,6 +60,7 @@ export const api = {
   dabMux: () => request<{ running: boolean; ready?: boolean; mux: DabMux | null; log: string[] }>('/api/dab/mux'),
   dabChannel: (channel: string) => request<{ channel: string }>('/api/dab/channel', { method: 'POST', body: JSON.stringify({ channel }) }),
   dabMp3Url: (sid: string) => `/api/dab/mp3/${encodeURIComponent(sid)}`,
+  satAntenna: () => request<{ markdown: string }>('/api/satellite/antenna'),
   satInfo: () => request<{ satellites: SatInfo[]; satdump: boolean; dir: string }>('/api/satellite/info'),
   satPasses: (lat: number, lon: number, hours = 24) => request<{ tleFetchedAt: number; passes: (SatPass & { captureId: number | null })[] }>(`/api/satellite/passes?lat=${lat}&lon=${lon}&hours=${hours}`),
   satCaptures: () => request<SatCapture[]>('/api/satellite/captures'),

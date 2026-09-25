@@ -4,7 +4,7 @@ import type { Band, Device, ModeConfig, Plane, SatCapture, Signal, Status, Sweep
 import { api } from '@/lib/api';
 import { useSdrSocket } from '@/hooks/useSdrSocket';
 import { toaster } from '@/components/ui/toaster';
-import { pushHuntLevel, resetHunt } from '@/lib/huntFeed';
+import { pushHuntBurst, pushHuntLevel, resetHunt } from '@/lib/huntFeed';
 import type { Calibration } from '@shared/sdr/calibration';
 
 const MAX_SWEEPS = 300;
@@ -99,6 +99,9 @@ export function SdrProvider({ children }: { children: ReactNode }) {
         break;
       case 'hunt:level':
         pushHuntLevel(m.level, m.maxDbfs, m.maxAt);
+        break;
+      case 'hunt:burst':
+        pushHuntBurst(m.burst);
         break;
       case 'satellite:capture':
         setSatCaptures((prev) => {

@@ -14,7 +14,7 @@ import { loadTles, predictAll, satInfo, SATELLITES } from './sdr/satellite.js';
 import { analyzeEmi, compareReports, floorTrend, medianSpectrum, type EmiReport } from './sdr/emi.js';
 import { removeEntry, upsertEntry, type Calibration } from './sdr/calibration.js';
 import { icaoCountry } from './sdr/icao.js';
-import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { normalize, sep } from 'node:path';
 import {
   AUDIO_SAMPLE_RATE, DAB_CHANNELS, DAB_WEB_PORT, DEFAULT_ADSB, DEFAULT_DAB, DEFAULT_DEVICES, DEFAULT_HOME, DEFAULT_HUNT, DEFAULT_SURVEY,
@@ -92,11 +92,10 @@ function parseModeBody(body: unknown): ModeConfig {
       return { mode: 'adsb', config };
     }
     case 'hunt': {
-      const config: HuntConfig = {
-        freqHz: Math.round(num(cfg.freqHz, DEFAULT_HUNT.freqHz)),
-        gainDb: num(cfg.gainDb, DEFAULT_HUNT.gainDb),
-        sampleRate: Math.round(num(cfg.sampleRate, DEFAULT_HUNT.sampleRate)),
-      };
+      const mode = cfg.mode === 'single' ? 'single' : 'eu868';
+      const config: HuntConfig = mode === 'eu868'
+        ? { mode, freqHz: DEFAULT_HUNT.freqHz, gainDb: num(cfg.gainDb, DEFAULT_HUNT.gainDb), sampleRate: DEFAULT_HUNT.sampleRate }
+        : { mode, freqHz: Math.round(num(cfg.freqHz, 868_100_000)), gainDb: num(cfg.gainDb, DEFAULT_HUNT.gainDb), sampleRate: Math.round(num(cfg.sampleRate, 250_000)) };
       return { mode: 'hunt', config };
     }
     case 'audio': {
@@ -415,6 +414,13 @@ app.get<{ Params: { sid: string } }>('/api/dab/mp3/:sid', async (req, reply) => 
 // ---------- satellites ----------
 
 app.get('/api/satellite/info', async () => ({ satellites: SATELLITES, satdump: manager.status().tools.satdump, dir: SAT_DIR }));
+
+/** reference/antena-137mhz.md: V-dipole dimensions and build notes, shown in the Satellites section. */
+app.get('/api/satellite/antenna', async (_req, reply) => {
+  const path = resolve(ROOT, 'reference', 'antena-137mhz.md');
+  if (!existsSync(path)) return reply.code(404).send({ error: 'reference/antena-137mhz.md no existeix' });
+  return { markdown: readFileSync(path, 'utf8') };
+});
 
 app.get<{ Querystring: { lat?: string; lon?: string; hours?: string; minEl?: string } }>('/api/satellite/passes', async (req, reply) => {
   const obs = { lat: num(req.query.lat, DEFAULT_HOME.lat), lon: num(req.query.lon, DEFAULT_HOME.lon) };

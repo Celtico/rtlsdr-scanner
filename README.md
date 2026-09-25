@@ -5,9 +5,9 @@ Aplicació web local per descobrir quins senyals de ràdio hi ha a casa amb un *
 - **Espectre**: escombrats amb `rtl_power`, waterfall en temps real, detecció de pics sobre el soroll de fons i classificació per banda (ES/UE).
 - **Dispositius**: `rtl_433` saltant entre 433,92 i 868,3 MHz. Dedup per model+id+canal, històric de lectures, àlies, filtre «probablement meu / veïns».
 - **Avions**: ADS-B a 1090 MHz amb `rtl_adsb` (ICAO, país pel bloc ICAO, indicatiu, altitud, posició, velocitat, rumb).
-- **Radar**: vista en planta centrada a casa (Lleida per defecte, configurable). Avions per posició real amb estela; la resta de dispositius en anells per RSSI amb direcció desconeguda (o manual, si l'has trobada amb una antena directiva).
+- **Radar** (pestanya dins d'Avions): vista en planta centrada a casa (Lleida per defecte, configurable). Avions per posició real amb estela; la resta de dispositius en anells per RSSI amb direcció desconeguda (o manual, si l'has trobada amb una antena directiva).
 - **Auditoria**: superfície d'exposició de ràdio de casa: què emet en clar, què és identificable per ID, rutines horàries i recomanacions. Només metadades dels dispositius propis.
-- **Hunt**: RSSI en viu (10×/s) en una freqüència fixa amb `rtl_sdr` (IQ cru, 250 kHz), pic màxim i to sonor tipus detector de metalls per localitzar sensors LoRa a 868 MHz.
+- **Hunt**: localitzar sensors LoRaWAN. Mode EU868: els 8 canals de ChirpStack (867,1–868,5 MHz) alhora en una sola finestra de 2,4 MHz centrada a 867,8 MHz (`rtl_sdr` IQ cru, canalitzador propi sense FFT), RSSI per canal 10×/s, llista de ràfegues amb canal i nivell, pic màxim, to sonor tipus detector de metalls amb «tic» a cada ràfega i volum, guany ajustable en calent. Mode alternatiu d'una sola freqüència (250 kHz).
 - **Satèl·lits**: passos de NOAA-15/19 (APT) i Meteor-M2 3/4 (LRPT) sobre casa amb TLE de Celestrak (SGP4 via `satellite.js`), programació de captures que llancen **SatDump** pel `manager` i galeria de les imatges descodificades a `data/satellite/`.
 - **Ràdio FM**: botó d'escolta als senyals de la banda FM (`rtl_fm` → PCM → Web Audio). Només radiodifusió: cap altra banda es reprodueix.
 - **DAB**: ràdio digital descodificada per `welle-cli` **dins de Docker**; el Mac només executa `rtl_tcp` (osmocom) i el contenidor s'hi connecta per xarxa. Llista de programes i àudio MP3 a través del servidor.
@@ -55,7 +55,7 @@ server/src/
   sdr/devices.ts    parser de rtl_433 i dedup
   sdr/adsb.ts       descodificador Mode S / ADS-B (CRC, indicatiu, altitud, CPR, velocitat)
   sdr/icao.ts       blocs d'adreces ICAO → país
-  sdr/hunt.ts       mesurador de potència a partir de l'IQ de rtl_sdr
+  sdr/hunt.ts       mesurador de potència (una freqüència) i canalitzador EU868 de 8 canals a partir de l'IQ de rtl_sdr
   sdr/audit.ts      classificació d'exposició (en clar / ID / codi variable) i rutines
   sdr/satellite.ts  TLE (Celestrak, cau 12 h), predicció de passos SGP4, ordre de SatDump, galeria
   sdr/emi.ts        anàlisi de soroll: trams, pintes, banda ampla, portadores, comparació amb línia base
@@ -63,7 +63,7 @@ server/src/
   sdr/bands.ts      taula de bandes
 server/test/        tests + fixtures capturades amb el dongle
 web/src/
-  pages/            Dashboard, Spectrum, Devices, Planes, Radar, Audit, Hunt, Satellites, Dab, Noise, History
+  pages/            Dashboard, Spectrum, Devices, Planes (+ Radar), Audit, Hunt, Satellites, Dab, Noise, History
 docker/decoders/    Dockerfile dels descodificadors (welle-cli, rtl-sdr, rtl_433)
   components/       Waterfall i RadarCanvas (canvas), SignalsTable, DeviceDrawer, Layout…
   store.tsx         estat global alimentat pel WebSocket
@@ -93,7 +93,8 @@ docker/decoders/    Dockerfile dels descodificadors (welle-cli, rtl-sdr, rtl_433
 | GET | `/api/planes?scanId=` | avions |
 | GET | `/api/scans`, `/api/scans/:id`, DELETE `/api/scans/:id` | històric |
 | GET | `/api/export/:kind?format=csv\|json&scanId=&deviceId=` | `signals`, `devices`, `planes`, `sweeps`, `readings` |
-| WS | `/ws` | `status`, `survey:sweep`, `survey:signals`, `device:new`, `device:update`, `adsb:plane`, `hunt:level`, `satellite:capture`, `error` |
+| GET | `/api/satellite/antenna` | `reference/antena-137mhz.md` (mides de la V-dipole) |
+| WS | `/ws` | `status`, `survey:sweep`, `survey:signals`, `device:new`, `device:update`, `adsb:plane`, `hunt:level`, `hunt:burst`, `satellite:capture`, `error` |
 
 ## Notes d'ús
 

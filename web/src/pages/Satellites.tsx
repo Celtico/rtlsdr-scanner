@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { formatAgo, formatDateTime, formatDuration, formatMHz, formatTime } from '@/lib/format';
 import { compassLabel } from '@/lib/geo';
 import { toaster } from '@/components/ui/toaster';
+import { Markdown } from '@/components/Markdown';
 import { Tooltip } from '@/components/ui/tooltip';
 
 const HOME_KEY = 'sdr-home';
@@ -45,6 +46,8 @@ export function Satellites() {
   const [gain, setGain] = useState(40.2);
   const [openCapture, setOpenCapture] = useState<SatCapture | null>(null);
   const [image, setImage] = useState<string | null>(null);
+  const [antenna, setAntenna] = useState<string | null>(null);
+  useEffect(() => { api.satAntenna().then((r) => setAntenna(r.markdown)).catch(() => setAntenna(null)); }, []);
 
   useEffect(() => { try { localStorage.setItem(HOME_KEY, JSON.stringify(home)); } catch { /* ignore */ } }, [home]);
 
@@ -112,7 +115,7 @@ export function Satellites() {
         <Alert.Content>
           <Alert.Title>Amb l’antena vareta els resultats seran pobres</Alert.Title>
           <Alert.Description>
-            Per a imatges decents cal una antena de 137 MHz polaritzada circularment: una <b>V-dipole</b> (dos braços de 53,4 cm en V a 120°, horitzontal, l’obertura cap al sud) o una QFH.
+            Per a imatges decents cal una antena de 137 MHz: una <b>V-dipole</b> (dos braços de 53,4 cm en V a 120°, horitzontal, obertura nord-sud) o una QFH. Les mides i el muntatge són a la targeta «Antena V-dipole» d’aquesta pàgina (font: <code>reference/antena-137mhz.md</code>).
             Passos amb elevació màxima alta (&gt; 40°) i sense edificis al voltant. SatDump descodifica en acabar el pas.
           </Alert.Description>
         </Alert.Content>
@@ -255,6 +258,12 @@ export function Satellites() {
               </Stack>
             </Card.Body>
           </Card.Root>
+          {antenna && (
+            <Card.Root size="sm" minW="0" overflow="hidden">
+              <Card.Header><Card.Title>Antena V-dipole per a 137 MHz</Card.Title><Card.Description>Mides i muntatge (reference/antena-137mhz.md).</Card.Description></Card.Header>
+              <Card.Body pt="0"><Markdown text={antenna} /></Card.Body>
+            </Card.Root>
+          )}
           <Card.Root size="sm" variant="subtle">
             <Card.Body>
               <HStack align="flex-start" gap="2" fontSize="xs" color="fg.muted">

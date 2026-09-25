@@ -33,7 +33,7 @@ function describeConfig(status: NonNullable<ReturnType<typeof useSdr>['status']>
   if ('freqsHz' in c) return c.freqsHz.map((f) => formatMHz(f, 2)).join(' + ');
   if ('captureId' in c) return `${c.satellite} · ${formatMHz(c.freqHz)}`;
   if ('channel' in c) return `DAB bloc ${c.channel} (Docker)`;
-  if ('sampleRate' in c) return `${formatMHz(c.freqHz)} · ${c.sampleRate / 1000} kHz`;
+  if ('sampleRate' in c) return c.mode === 'eu868' ? 'EU868 · 8 canals · 867,1–868,5 MHz' : `${formatMHz(c.freqHz)} · ${c.sampleRate / 1000} kHz`;
   if ('freqHz' in c) return `${formatMHz(c.freqHz, 1)} FM`;
   return '1090 MHz';
 }
@@ -106,7 +106,7 @@ export function Dashboard() {
   const calInfo = u.offset(signalsGainDb);
   const calEntries = calibration?.entries ?? [];
 
-  const huntSummary = lastHunt?.summary as { maxDbfs: number | null; maxAt: number | null; samples: number } | null | undefined;
+  const huntSummary = lastHunt?.summary as { maxDbfs: number | null; maxAt: number | null; samples: number; maxHz?: number | null } | null | undefined;
   const huntCfg = lastHunt && 'sampleRate' in lastHunt.config ? lastHunt.config : null;
 
   return (
@@ -195,9 +195,9 @@ export function Dashboard() {
             <Text><Badge colorPalette="brand" variant="solid" size="sm">en marxa</Badge> {describeConfig(status)}</Text>
           ) : lastHunt && huntCfg ? (
             <Stack gap="1">
-              <Text>Última sessió: <b>{formatMHz(huntCfg.freqHz)}</b> · guany {huntCfg.gainDb} dB</Text>
+              <Text>Última sessió: <b>{huntCfg.mode === 'eu868' ? 'EU868, 8 canals' : formatMHz(huntCfg.freqHz)}</b> · guany {huntCfg.gainDb} dB</Text>
               <Text fontSize="xs" color="fg.muted">
-                {huntSummary?.maxDbfs != null ? `Pic màxim ${huntSummary.maxDbfs.toFixed(1)} dBFS${huntSummary.maxAt ? ` a les ${formatTime(huntSummary.maxAt)}` : ''}` : 'Sense pic registrat'} · {formatAgo(lastHunt.endedAt ?? lastHunt.startedAt, now)}
+                {huntSummary?.maxDbfs != null ? `Pic màxim ${huntSummary.maxDbfs.toFixed(1)} dBFS${huntSummary.maxHz ? ` a ${formatMHz(huntSummary.maxHz, 1)}` : ''}${huntSummary.maxAt ? ` a les ${formatTime(huntSummary.maxAt)}` : ''}` : 'Sense pic registrat'} · {formatAgo(lastHunt.endedAt ?? lastHunt.startedAt, now)}
               </Text>
             </Stack>
           ) : (
@@ -239,7 +239,7 @@ export function Dashboard() {
           </Stack>
         </SummaryCard>
 
-        <SummaryCard title="Radar" to="/radar" icon={<TbRadar2 />} palette="blue">
+        <SummaryCard title="Radar" to="/avions?tab=radar" icon={<TbRadar2 />} palette="blue">
           <Stack gap="1">
             <Text><b>{livePlanes.length}</b> {livePlanes.length === 1 ? 'avió amb posició' : 'avions amb posició'} ara · {devices.length} dispositius en anells RSSI</Text>
             <Text fontSize="xs" color="fg.muted">

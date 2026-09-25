@@ -29,7 +29,7 @@ function describe(s: Scan): string {
     return `${s.config.satellite} · ${formatHzShort(s.config.freqHz)} · ${s.config.pipeline}`;
   }
   if (s.kind === 'hunt' && 'sampleRate' in s.config) {
-    return `${formatHzShort(s.config.freqHz)} · amplada ${formatHzShort(s.config.sampleRate)} · guany ${s.config.gainDb} dB`;
+    return s.config.mode === 'eu868' ? `EU868 · 8 canals (867,1–868,5 MHz) · guany ${s.config.gainDb} dB` : `${formatHzShort(s.config.freqHz)} · amplada ${formatHzShort(s.config.sampleRate)} · guany ${s.config.gainDb} dB`;
   }
   return '1090 MHz';
 }

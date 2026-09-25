@@ -32,12 +32,37 @@ export interface AdsbConfig {
   gainDb: number | null;
 }
 
-/** Hunt mode: fixed frequency, live RSSI several times per second (rtl_sdr raw IQ power). */
+/**
+ * Hunt mode: live RSSI several times per second from rtl_sdr raw IQ.
+ * 'single': one frequency, bandwidth = sampleRate (250 kHz suits one LoRa channel).
+ * 'eu868': the 8 LoRaWAN EU868 channels (867.1–868.5 MHz) in one 2.4 MHz window centred at 867.8 MHz.
+ */
 export interface HuntConfig {
+  mode: 'single' | 'eu868';
   freqHz: number;
   gainDb: number;
-  /** Sample rate = listening bandwidth. 250 kHz suits LoRa/ISM bursts. */
   sampleRate: number;
+}
+
+/** LoRaWAN EU868 channel plan used by ChirpStack (8 channels, 125 kHz each). */
+export const EU868_CHANNELS_HZ = [867_100_000, 867_300_000, 867_500_000, 867_700_000, 867_900_000, 868_100_000, 868_300_000, 868_500_000];
+export const EU868_CENTER_HZ = 867_800_000;
+export const EU868_SAMPLE_RATE = 2_400_000;
+
+export interface HuntChannel {
+  freqHz: number;
+  /** Mean power of the 100 ms block in this channel (dBFS). */
+  dbfs: number;
+  /** Highest 10 ms sub-block in this channel (dBFS): catches LoRa bursts. */
+  peakDbfs: number;
+}
+
+export interface HuntBurst {
+  ts: number;
+  freqHz: number;
+  peakDbfs: number;
+  /** dB above that channel's floor. */
+  aboveFloorDb: number;
 }
 
 /** Satellite capture: SatDump live pipeline for one pass. */
@@ -169,13 +194,17 @@ export interface Plane {
   country: string | null;
 }
 
-/** One live RSSI sample from hunt mode. */
+/** One live RSSI sample from hunt mode. In 'eu868' mode dbfs/peakDbfs are the strongest channel's. */
 export interface HuntLevel {
   ts: number;
   /** Mean power of the block in dBFS (0 = full scale). */
   dbfs: number;
   /** Highest 10 ms sub-block power in dBFS, catches short bursts. */
   peakDbfs: number;
+  /** Per-channel levels (eu868 mode only). */
+  channels?: HuntChannel[];
+  /** Channel with the highest peak in this block (eu868 mode only). */
+  strongestHz?: number;
 }
 
 export type ScanKind = 'survey' | 'devices' | 'adsb' | 'hunt' | 'satellite' | 'audio' | 'dab';
@@ -242,6 +271,7 @@ export type WsMessage =
   | { type: 'device:update'; device: Device }
   | { type: 'adsb:plane'; plane: Plane }
   | { type: 'hunt:level'; level: HuntLevel; maxDbfs: number; maxAt: number | null }
+  | { type: 'hunt:burst'; burst: HuntBurst }
   | { type: 'satellite:capture'; capture: SatCapture }
   | { type: 'error'; code: SdrErrorCode; message: string }
   | { type: 'log'; line: string };
@@ -294,7 +324,7 @@ export const DAB_WEB_PORT = 7979;
 export const DAB_IMAGE = 'rtlsdr-decoders';
 export const DAB_CONTAINER = 'sdr-dab';
 
-export const DEFAULT_HUNT: HuntConfig = { freqHz: 868_100_000, gainDb: 29.7, sampleRate: 250_000 };
+export const DEFAULT_HUNT: HuntConfig = { mode: 'eu868', freqHz: EU868_CENTER_HZ, gainDb: 29.7, sampleRate: EU868_SAMPLE_RATE };
 
 /** Home position for the radar view (Lleida). */
 export const DEFAULT_HOME = { lat: 41.62, lon: 0.62 };

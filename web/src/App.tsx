@@ -5,7 +5,6 @@ import { Spectrum } from '@/pages/Spectrum';
 import { Devices } from '@/pages/Devices';
 import { Planes } from '@/pages/Planes';
 import { History } from '@/pages/History';
-import { Radar } from '@/pages/Radar';
 import { Audit } from '@/pages/Audit';
 import { Hunt } from '@/pages/Hunt';
 import { Satellites } from '@/pages/Satellites';
@@ -20,7 +19,7 @@ export function App() {
         <Route path="espectre" element={<Spectrum />} />
         <Route path="dispositius" element={<Devices />} />
         <Route path="avions" element={<Planes />} />
-        <Route path="radar" element={<Radar />} />
+        <Route path="radar" element={<Navigate to="/avions?tab=radar" replace />} />
         <Route path="auditoria" element={<Audit />} />
         <Route path="hunt" element={<Hunt />} />
         <Route path="satellits" element={<Satellites />} />

@@ -1,4 +1,8 @@
-import { Badge, Box, Button, Card, HStack, Link, Stack, Table, Text } from '@chakra-ui/react';
+import { Badge, Box, Button, Card, HStack, Link, Stack, Table, Tabs, Text } from '@chakra-ui/react';
+import { useSearchParams } from 'react-router-dom';
+import { TbRadar2 } from 'react-icons/tb';
+import { LuList } from 'react-icons/lu';
+import { Radar } from '@/pages/Radar';
 import { useMemo } from 'react';
 import { LuCircleStop, LuDownload, LuExternalLink, LuPlay } from 'react-icons/lu';
 import { useNow, useSdr } from '@/store';
@@ -10,9 +14,18 @@ export function Planes() {
   const now = useNow(2000);
   const running = status?.mode === 'adsb';
   const rows = useMemo(() => [...planes].sort((a, b) => b.lastSeen - a.lastSeen), [planes]);
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') === 'radar' ? 'radar' : 'taula';
 
   return (
     <Stack gap="4">
+      <Tabs.Root value={tab} onValueChange={(e) => setParams(e.value === 'radar' ? { tab: 'radar' } : {})} variant="enclosed" size="sm">
+        <Tabs.List>
+          <Tabs.Trigger value="taula"><LuList /> Taula</Tabs.Trigger>
+          <Tabs.Trigger value="radar"><TbRadar2 /> Radar</Tabs.Trigger>
+        </Tabs.List>
+      </Tabs.Root>
+      {tab === 'radar' ? <Radar /> : (<>
       <Card.Root size="sm" minW="0" overflow="hidden">
         <Card.Body>
           <HStack justify="space-between" flexWrap="wrap" gap="3">
@@ -89,6 +102,7 @@ export function Planes() {
           )}
         </Card.Body>
       </Card.Root>
+    </>)}
     </Stack>
   );
 }

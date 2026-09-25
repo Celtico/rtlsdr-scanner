@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import type { Db } from '../db.js';
 import { connect as netConnect } from 'node:net';
 import {
-  AUDIO_SAMPLE_RATE, DAB_CHANNELS, DAB_CONTAINER, DAB_IMAGE, DAB_WEB_PORT, FM_BAND, RTL_TCP_PORT,
+  AUDIO_SAMPLE_RATE, DAB_CHANNELS, DAB_CONTAINER, DAB_IMAGE, DAB_WEB_PORT, EU868_CHANNELS_HZ, FM_BAND, RTL_TCP_PORT,
   type AdsbConfig, type AudioConfig, type DabConfig, type DevicesConfig, type DongleInfo, type HuntConfig, type Mode, type ModeConfig,
   type SatelliteConfig, type SdrErrorCode, type Signal, type Status, type SurveyConfig, type WsMessage,
 } from '../types.js';
@@ -12,7 +12,7 @@ import { SdrProcess, stopAll, type SdrError } from './process.js';
 import { rtlPowerArgs, SignalTracker, SweepAssembler, validateSurveyConfig } from './survey.js';
 import { parseRtl433Line, rtl433Args, validateDevicesConfig } from './devices.js';
 import { parseAdsbLine, PlaneTracker, rtlAdsbArgs, toPlane } from './adsb.js';
-import { LevelMeter, rtlSdrArgs, validateHuntConfig } from './hunt.js';
+import { ChannelMeter, LevelMeter, rtlSdrArgs, validateHuntConfig } from './hunt.js';
 import { findSatdump, listImages, satdumpArgs } from './satellite.js';
 
 const execFileP = promisify(execFile);
@@ -57,7 +57,7 @@ interface Active {
   /** Last stderr lines (satdump logs there). */
   satLog: string[];
   /** Hunt mode: the live meter, for the end-of-scan summary. */
-  huntMeter?: LevelMeter;
+  huntMeter?: LevelMeter | ChannelMeter;
   huntSamples?: number;
   /** DAB mode: the Docker client process (the dongle owner `proc` is rtl_tcp). */
   containerProc?: SdrProcess;
@@ -222,7 +222,8 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage]; audio: [Uin
 
   private scanSummary(a: Active): Record<string, unknown> | undefined {
     if (a.mode === 'hunt' && a.huntMeter) {
-      return { maxDbfs: Number.isFinite(a.huntMeter.maxDbfs) ? a.huntMeter.maxDbfs : null, maxAt: a.huntMeter.maxAt, samples: a.huntSamples ?? 0 };
+      const m = a.huntMeter;
+      return { maxDbfs: Number.isFinite(m.maxDbfs) ? m.maxDbfs : null, maxAt: m.maxAt, samples: a.huntSamples ?? 0, maxHz: m instanceof ChannelMeter ? m.maxHz : (a.config as HuntConfig).freqHz };
     }
     return undefined;
   }
@@ -358,7 +359,9 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage]; audio: [Uin
 
   private startHunt(config: HuntConfig): void {
     const scanId = this.db.createScan('hunt', config);
-    const meter = new LevelMeter(config.sampleRate);
+    const meter = config.mode === 'eu868'
+      ? new ChannelMeter(config.freqHz, config.sampleRate, EU868_CHANNELS_HZ)
+      : new LevelMeter(config.sampleRate);
     const ref: { a: Active | null } = { a: null };
     const proc = new SdrProcess('rtl_sdr', rtlSdrArgs(config), {
       ...this.baseHandlers(() => ref.a!),
@@ -366,9 +369,17 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage]; audio: [Uin
       onData: (chunk) => {
         const active = ref.a;
         if (!active || this.active !== active) return;
-        for (const level of meter.push(chunk)) {
-          active.huntSamples = (active.huntSamples ?? 0) + 1;
-          this.emit('message', { type: 'hunt:level', level, maxDbfs: meter.maxDbfs, maxAt: meter.maxAt });
+        if (meter instanceof ChannelMeter) {
+          for (const { level, bursts } of meter.push(chunk)) {
+            active.huntSamples = (active.huntSamples ?? 0) + 1;
+            this.emit('message', { type: 'hunt:level', level, maxDbfs: meter.maxDbfs, maxAt: meter.maxAt });
+            for (const burst of bursts) this.emit('message', { type: 'hunt:burst', burst });
+          }
+        } else {
+          for (const level of meter.push(chunk)) {
+            active.huntSamples = (active.huntSamples ?? 0) + 1;
+            this.emit('message', { type: 'hunt:level', level, maxDbfs: meter.maxDbfs, maxAt: meter.maxAt });
+          }
         }
       },
     });
