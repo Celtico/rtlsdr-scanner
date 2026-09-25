@@ -437,7 +437,9 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage]; audio: [Uin
   private async startDab(config: DabConfig): Promise<void> {
     const scanId = this.db.createScan('dab', config);
     const ref: { a: Active | null } = { a: null };
-    const pushLog = (l: string) => { const a = ref.a; if (a) { a.log.push(l); if (a.log.length > 100) a.log.shift(); } };
+    // rtl_tcp prints "Signal caught, exiting!" on every client disconnect (our port probe, welle retunes) and keeps listening.
+    const NOISE = /Signal caught, exiting!|comm recv bye|all threads dead|listening\.\.\./;
+    const pushLog = (l: string) => { const a = ref.a; if (a && !NOISE.test(l)) { a.log.push(l); if (a.log.length > 100) a.log.shift(); } };
     const tcpArgs = ['-a', '0.0.0.0', '-p', String(RTL_TCP_PORT)];
     if (config.gainDb !== null) tcpArgs.push('-g', String(config.gainDb));
     const base = this.baseHandlers(() => ref.a!);
