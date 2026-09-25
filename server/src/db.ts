@@ -1,0 +1,321 @@
+import Database from 'better-sqlite3';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+import type { Device, Plane, Reading, Scan, ScanKind, Signal, Sweep } from './types.js';
+
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS scans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER,
+  config TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sweeps (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scan_id INTEGER NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+  ts INTEGER NOT NULL,
+  low_hz INTEGER NOT NULL,
+  step_hz REAL NOT NULL,
+  dbs BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sweeps_scan ON sweeps(scan_id, ts);
+CREATE TABLE IF NOT EXISTS signals (
+  id TEXT NOT NULL,
+  scan_id INTEGER NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+  freq_hz INTEGER NOT NULL,
+  width_hz INTEGER NOT NULL,
+  peak_db REAL NOT NULL,
+  floor_db REAL NOT NULL,
+  excess_db REAL NOT NULL,
+  duty_pct INTEGER NOT NULL,
+  band TEXT,
+  restricted INTEGER NOT NULL DEFAULT 0,
+  first_seen INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  PRIMARY KEY (scan_id, id)
+);
+CREATE TABLE IF NOT EXISTS devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT NOT NULL UNIQUE,
+  model TEXT NOT NULL,
+  device_id TEXT,
+  channel TEXT,
+  freq_hz INTEGER,
+  first_seen INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  rssi REAL,
+  snr REAL,
+  last_data TEXT NOT NULL DEFAULT '{}',
+  alias TEXT
+);
+CREATE TABLE IF NOT EXISTS readings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  scan_id INTEGER,
+  ts INTEGER NOT NULL,
+  rssi REAL,
+  snr REAL,
+  data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS readings_device ON readings(device_id, ts);
+CREATE TABLE IF NOT EXISTS planes (
+  icao TEXT PRIMARY KEY,
+  callsign TEXT,
+  first_seen INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  msgs INTEGER NOT NULL DEFAULT 0,
+  altitude_ft INTEGER,
+  lat REAL,
+  lon REAL,
+  speed_kt REAL,
+  heading_deg REAL,
+  vertical_rate_fpm INTEGER,
+  scan_id INTEGER
+);
+`;
+
+interface ScanRow {
+  id: number;
+  kind: ScanKind;
+  started_at: number;
+  ended_at: number | null;
+  config: string;
+  sweeps: number;
+  signals: number;
+  devices: number;
+  planes: number;
+}
+interface SweepRow { scan_id: number; ts: number; low_hz: number; step_hz: number; dbs: Buffer }
+interface SignalRow {
+  id: string; scan_id: number; freq_hz: number; width_hz: number; peak_db: number; floor_db: number;
+  excess_db: number; duty_pct: number; band: string | null; restricted: number; first_seen: number; last_seen: number;
+}
+interface DeviceRow {
+  id: number; key: string; model: string; device_id: string | null; channel: string | null; freq_hz: number | null;
+  first_seen: number; last_seen: number; count: number; rssi: number | null; snr: number | null; last_data: string;
+  alias: string | null; rssi_avg: number | null; rssi_std: number | null;
+}
+interface ReadingRow { id: number; device_id: number; ts: number; rssi: number | null; snr: number | null; data: string }
+interface PlaneRow {
+  icao: string; callsign: string | null; first_seen: number; last_seen: number; msgs: number; altitude_ft: number | null;
+  lat: number | null; lon: number | null; speed_kt: number | null; heading_deg: number | null; vertical_rate_fpm: number | null;
+}
+
+const SCAN_SELECT = `
+  SELECT s.*,
+    (SELECT COUNT(*) FROM sweeps WHERE scan_id = s.id) AS sweeps,
+    (SELECT COUNT(*) FROM signals WHERE scan_id = s.id) AS signals,
+    (SELECT COUNT(DISTINCT device_id) FROM readings WHERE scan_id = s.id) AS devices,
+    (SELECT COUNT(*) FROM planes WHERE scan_id = s.id) AS planes
+  FROM scans s`;
+
+const DEVICE_SELECT = `
+  SELECT d.*,
+    (SELECT AVG(rssi) FROM readings r WHERE r.device_id = d.id AND r.rssi IS NOT NULL) AS rssi_avg,
+    (SELECT AVG(rssi * rssi) - AVG(rssi) * AVG(rssi) FROM readings r WHERE r.device_id = d.id AND r.rssi IS NOT NULL) AS rssi_var
+  FROM devices d`;
+
+function scanFromRow(r: ScanRow): Scan {
+  return {
+    id: r.id, kind: r.kind, startedAt: r.started_at, endedAt: r.ended_at, config: JSON.parse(r.config),
+    sweeps: r.sweeps, signals: r.signals, devices: r.devices, planes: r.planes,
+  };
+}
+
+/** RSSI strong (rtl_433 level, 0 dB = full scale) and stable across readings => probably in the same home. */
+export function isLikelyOwn(count: number, rssiAvg: number | null, rssiStd: number | null): boolean {
+  if (rssiAvg === null || count < 3) return false;
+  return rssiAvg > -8 && (rssiStd ?? 99) < 3;
+}
+
+function deviceFromRow(r: DeviceRow & { rssi_var?: number | null }): Device {
+  const rssiStd = r.rssi_var != null ? Math.sqrt(Math.max(0, r.rssi_var)) : null;
+  return {
+    id: r.id, key: r.key, model: r.model, deviceId: r.device_id, channel: r.channel, freqHz: r.freq_hz,
+    firstSeen: r.first_seen, lastSeen: r.last_seen, count: r.count, rssi: r.rssi, snr: r.snr,
+    rssiAvg: r.rssi_avg, rssiStd, likelyOwn: isLikelyOwn(r.count, r.rssi_avg, rssiStd),
+    lastData: JSON.parse(r.last_data), alias: r.alias,
+  };
+}
+
+function planeFromRow(r: PlaneRow): Plane {
+  return {
+    icao: r.icao, callsign: r.callsign, firstSeen: r.first_seen, lastSeen: r.last_seen, msgs: r.msgs,
+    altitudeFt: r.altitude_ft, lat: r.lat, lon: r.lon, speedKt: r.speed_kt, headingDeg: r.heading_deg,
+    verticalRateFpm: r.vertical_rate_fpm,
+  };
+}
+
+export class Db {
+  private db: Database.Database;
+
+  constructor(path: string) {
+    mkdirSync(dirname(path), { recursive: true });
+    this.db = new Database(path);
+    this.db.pragma('journal_mode = WAL');
+    this.db.pragma('foreign_keys = ON');
+    this.db.exec(SCHEMA);
+  }
+
+  close(): void {
+    this.db.close();
+  }
+
+  // ---- scans ----
+  createScan(kind: ScanKind, config: unknown): number {
+    const r = this.db.prepare('INSERT INTO scans (kind, started_at, config) VALUES (?, ?, ?)')
+      .run(kind, Date.now(), JSON.stringify(config));
+    return Number(r.lastInsertRowid);
+  }
+
+  endScan(id: number): void {
+    this.db.prepare('UPDATE scans SET ended_at = ? WHERE id = ? AND ended_at IS NULL').run(Date.now(), id);
+  }
+
+  /** Mark scans left open by a crash as ended. */
+  closeDanglingScans(): void {
+    this.db.prepare('UPDATE scans SET ended_at = started_at WHERE ended_at IS NULL').run();
+  }
+
+  listScans(): Scan[] {
+    return (this.db.prepare(`${SCAN_SELECT} ORDER BY s.started_at DESC`).all() as ScanRow[]).map(scanFromRow);
+  }
+
+  getScan(id: number): Scan | null {
+    const r = this.db.prepare(`${SCAN_SELECT} WHERE s.id = ?`).get(id) as ScanRow | undefined;
+    return r ? scanFromRow(r) : null;
+  }
+
+  latestScan(kind: ScanKind): Scan | null {
+    const r = this.db.prepare(`${SCAN_SELECT} WHERE s.kind = ? ORDER BY s.started_at DESC LIMIT 1`).get(kind) as ScanRow | undefined;
+    return r ? scanFromRow(r) : null;
+  }
+
+  deleteScan(id: number): void {
+    this.db.prepare('DELETE FROM scans WHERE id = ?').run(id);
+  }
+
+  // ---- sweeps ----
+  insertSweep(s: Sweep): void {
+    const buf = Buffer.from(new Float32Array(s.dbs).buffer);
+    this.db.prepare('INSERT INTO sweeps (scan_id, ts, low_hz, step_hz, dbs) VALUES (?, ?, ?, ?, ?)')
+      .run(s.scanId, s.ts, s.lowHz, s.stepHz, buf);
+  }
+
+  listSweeps(scanId: number, limit = 400): Sweep[] {
+    const rows = this.db.prepare('SELECT scan_id, ts, low_hz, step_hz, dbs FROM sweeps WHERE scan_id = ? ORDER BY ts DESC LIMIT ?')
+      .all(scanId, limit) as SweepRow[];
+    return rows.reverse().map((r) => {
+      const f32 = new Float32Array(r.dbs.buffer, r.dbs.byteOffset, r.dbs.byteLength / 4);
+      return { scanId: r.scan_id, ts: r.ts, lowHz: r.low_hz, stepHz: r.step_hz, dbs: Array.from(f32) };
+    });
+  }
+
+  // ---- signals ----
+  replaceSignals(scanId: number, signals: Signal[]): void {
+    const del = this.db.prepare('DELETE FROM signals WHERE scan_id = ?');
+    const ins = this.db.prepare(`INSERT INTO signals
+      (id, scan_id, freq_hz, width_hz, peak_db, floor_db, excess_db, duty_pct, band, restricted, first_seen, last_seen)
+      VALUES (@id, @scanId, @freqHz, @widthHz, @peakDb, @floorDb, @excessDb, @dutyPct, @band, @restricted, @firstSeen, @lastSeen)`);
+    this.db.transaction(() => {
+      del.run(scanId);
+      for (const s of signals) ins.run({ ...s, restricted: s.restricted ? 1 : 0 });
+    })();
+  }
+
+  listSignals(scanId: number): Signal[] {
+    const rows = this.db.prepare('SELECT * FROM signals WHERE scan_id = ? ORDER BY excess_db DESC').all(scanId) as SignalRow[];
+    return rows.map((r) => ({
+      id: r.id, scanId: r.scan_id, freqHz: r.freq_hz, widthHz: r.width_hz, peakDb: r.peak_db, floorDb: r.floor_db,
+      excessDb: r.excess_db, dutyPct: r.duty_pct, band: r.band, restricted: r.restricted === 1,
+      firstSeen: r.first_seen, lastSeen: r.last_seen,
+    }));
+  }
+
+  // ---- devices ----
+  upsertDevice(input: {
+    key: string; model: string; deviceId: string | null; channel: string | null; freqHz: number | null;
+    ts: number; rssi: number | null; snr: number | null; data: Record<string, unknown>; scanId: number | null;
+  }): { device: Device; isNew: boolean } {
+    const existing = this.db.prepare('SELECT id FROM devices WHERE key = ?').get(input.key) as { id: number } | undefined;
+    const dataJson = JSON.stringify(input.data);
+    const id = this.db.transaction(() => {
+      let devId: number;
+      if (existing) {
+        devId = existing.id;
+        this.db.prepare(`UPDATE devices SET last_seen = ?, count = count + 1, rssi = ?, snr = ?, last_data = ?,
+          freq_hz = COALESCE(?, freq_hz) WHERE id = ?`).run(input.ts, input.rssi, input.snr, dataJson, input.freqHz, devId);
+      } else {
+        const r = this.db.prepare(`INSERT INTO devices (key, model, device_id, channel, freq_hz, first_seen, last_seen, count, rssi, snr, last_data)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`)
+          .run(input.key, input.model, input.deviceId, input.channel, input.freqHz, input.ts, input.ts, input.rssi, input.snr, dataJson);
+        devId = Number(r.lastInsertRowid);
+      }
+      this.db.prepare('INSERT INTO readings (device_id, scan_id, ts, rssi, snr, data) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(devId, input.scanId, input.ts, input.rssi, input.snr, dataJson);
+      return devId;
+    })();
+    return { device: this.getDevice(id)!, isNew: !existing };
+  }
+
+  getDevice(id: number): Device | null {
+    const r = this.db.prepare(`${DEVICE_SELECT} WHERE d.id = ?`).get(id) as DeviceRow | undefined;
+    return r ? deviceFromRow(r) : null;
+  }
+
+  listDevices(): Device[] {
+    return (this.db.prepare(`${DEVICE_SELECT} ORDER BY d.last_seen DESC`).all() as DeviceRow[]).map(deviceFromRow);
+  }
+
+  setDeviceAlias(id: number, alias: string | null): Device | null {
+    this.db.prepare('UPDATE devices SET alias = ? WHERE id = ?').run(alias, id);
+    return this.getDevice(id);
+  }
+
+  deviceHistory(id: number, limit = 500): Reading[] {
+    const rows = this.db.prepare('SELECT * FROM readings WHERE device_id = ? ORDER BY ts DESC LIMIT ?').all(id, limit) as ReadingRow[];
+    return rows.reverse().map((r) => ({ id: r.id, deviceId: r.device_id, ts: r.ts, rssi: r.rssi, snr: r.snr, data: JSON.parse(r.data) }));
+  }
+
+  countDevices(scanId?: number): number {
+    if (scanId === undefined) return (this.db.prepare('SELECT COUNT(*) AS n FROM devices').get() as { n: number }).n;
+    return (this.db.prepare('SELECT COUNT(DISTINCT device_id) AS n FROM readings WHERE scan_id = ?').get(scanId) as { n: number }).n;
+  }
+
+  // ---- planes ----
+  upsertPlane(p: Plane, scanId: number | null): void {
+    this.db.prepare(`INSERT INTO planes (icao, callsign, first_seen, last_seen, msgs, altitude_ft, lat, lon, speed_kt, heading_deg, vertical_rate_fpm, scan_id)
+      VALUES (@icao, @callsign, @firstSeen, @lastSeen, @msgs, @altitudeFt, @lat, @lon, @speedKt, @headingDeg, @verticalRateFpm, @scanId)
+      ON CONFLICT(icao) DO UPDATE SET
+        callsign = COALESCE(excluded.callsign, planes.callsign),
+        last_seen = excluded.last_seen,
+        msgs = planes.msgs + excluded.msgs,
+        altitude_ft = COALESCE(excluded.altitude_ft, planes.altitude_ft),
+        lat = COALESCE(excluded.lat, planes.lat),
+        lon = COALESCE(excluded.lon, planes.lon),
+        speed_kt = COALESCE(excluded.speed_kt, planes.speed_kt),
+        heading_deg = COALESCE(excluded.heading_deg, planes.heading_deg),
+        vertical_rate_fpm = COALESCE(excluded.vertical_rate_fpm, planes.vertical_rate_fpm),
+        scan_id = excluded.scan_id`).run({ ...p, scanId });
+  }
+
+  listPlanes(scanId?: number): Plane[] {
+    const rows = (scanId === undefined
+      ? this.db.prepare('SELECT * FROM planes ORDER BY last_seen DESC').all()
+      : this.db.prepare('SELECT * FROM planes WHERE scan_id = ? ORDER BY last_seen DESC').all(scanId)) as PlaneRow[];
+    return rows.map(planeFromRow);
+  }
+
+  countPlanes(scanId?: number): number {
+    if (scanId === undefined) return (this.db.prepare('SELECT COUNT(*) AS n FROM planes').get() as { n: number }).n;
+    return (this.db.prepare('SELECT COUNT(*) AS n FROM planes WHERE scan_id = ?').get(scanId) as { n: number }).n;
+  }
+
+  /** Total scanning time in ms across all scans. */
+  totalScanTimeMs(): number {
+    const r = this.db.prepare('SELECT COALESCE(SUM(COALESCE(ended_at, ?) - started_at), 0) AS t FROM scans').get(Date.now()) as { t: number };
+    return r.t;
+  }
+}

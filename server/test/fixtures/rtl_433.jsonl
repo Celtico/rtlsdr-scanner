@@ -1,0 +1,4 @@
+{"time" : "2026-09-25T10:58:33", "model" : "Somfy-RTS", "id" : 10000001, "control" : "? (14)", "counter" : 0, "retransmission" : 1, "mic" : "CHECKSUM", "mod" : "ASK", "freq" : 433.535, "rssi" : 0.609, "snr" : 14.844, "noise" : -14.844}
+{"time" : "2026-09-25T10:58:36", "model" : "Somfy-RTS", "id" : 10000001, "control" : "? (14)", "counter" : 0, "retransmission" : 1, "mic" : "CHECKSUM", "mod" : "ASK", "freq" : 433.528, "rssi" : 0.641, "snr" : 15.341, "noise" : -15.341}
+{"time" : "2026-09-25T10:58:41", "model" : "Somfy-RTS", "id" : 10000001, "control" : "? (14)", "counter" : 0, "retransmission" : 1, "mic" : "CHECKSUM", "mod" : "ASK", "freq" : 433.532, "rssi" : 0.655, "snr" : 15.163, "noise" : -15.163}
+{"time" : "2026-09-25T10:58:45", "model" : "Somfy-RTS", "id" : 10000001, "control" : "? (14)", "counter" : 0, "retransmission" : 1, "mic" : "CHECKSUM", "mod" : "ASK", "freq" : 433.523, "rssi" : 0.638, "snr" : 12.544, "noise" : -12.544}

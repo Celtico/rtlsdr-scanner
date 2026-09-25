@@ -1,0 +1,13 @@
+{
+  "name": "rtlsdr-scanner",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.5.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel --stream dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test"
+  }
+}
