@@ -25,7 +25,8 @@ Aplicació web local per descobrir quins senyals de ràdio hi ha a casa amb un *
   docker build -t rtlsdr-decoders docker/decoders
   ```
   O bé `docker compose build`. El `docker-compose.yml` també té perfils per fer servir els descodificadors a mà: `docker compose run --rm dab` (welle-cli a http://localhost:7979, `DAB_CHANNEL=11B` per canviar de bloc), `docker compose run --rm rtl433` i `docker compose run --rm shell`; tots esperen `rtl_tcp` en marxa al Mac.
-  La imatge (Debian) porta `welle.io`, `rtl-sdr` (osmocom) i `rtl_433`. Docker Desktop a macOS no pot accedir a l'USB: per això el dongle el gestiona `rtl_tcp` al Mac (port 1234) i el contenidor s'hi connecta a `host.docker.internal`. TDT (DVB-T) no és possible amb aquest dongle en mode SDR (cal 9 MS/s i arriba a 2,4).
+  La imatge (Debian) porta `welle.io`, `rtl-sdr` (osmocom) i `rtl_433`.
+  Autotest del descodificador: `sh docker/decoders/selftest/run.sh` (descodifica una trama Nexus-TH sintètica dins del contenidor). Docker Desktop a macOS no pot accedir a l'USB: per això el dongle el gestiona `rtl_tcp` al Mac (port 1234) i el contenidor s'hi connecta a `host.docker.internal`. TDT (DVB-T) no és possible amb aquest dongle en mode SDR (cal 9 MS/s i arriba a 2,4).
 - Comprova el dongle: `rtl_test -t` ha de llistar `Realtek, RTL2838UHIDIR`.
 
 ## Ordres
