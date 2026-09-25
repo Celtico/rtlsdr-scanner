@@ -177,11 +177,15 @@ export function detectCombs(lowHz: number, stepHz: number, dbs: readonly number[
   return combs.sort((a, b) => b.count - a.count).slice(0, 8);
 }
 
-/** Contiguous chunks whose floor sits clearly above the quietest chunks: broadband noise (PLC, motors, switching). */
+/**
+ * Contiguous chunks whose floor sits clearly above the surrounding chunks: broadband noise (PLC, motors, switching).
+ * The reference is local (25th percentile over ±10 chunks) so the tuner's slow gain-vs-frequency curve on
+ * very wide sweeps does not show up as "noise".
+ */
 export function detectBroadband(chunks: readonly NoiseChunk[], riseDb = 6, minSpanHz = 15_000_000): BroadbandRegion[] {
   if (chunks.length < 4) return [];
-  const floors = chunks.map((c) => c.floorDb).sort((a, b) => a - b);
-  const base = percentile(floors, 0.25);
+  const W = 10;
+  const base = chunks.map((_, i) => percentile(chunks.slice(Math.max(0, i - W), i + W + 1).map((c) => c.floorDb).sort((a, b) => a - b), 0.25));
   const out: BroadbandRegion[] = [];
   let start = -1;
   const flush = (end: number) => {
@@ -189,13 +193,13 @@ export function detectBroadband(chunks: readonly NoiseChunk[], riseDb = 6, minSp
     const seg = chunks.slice(start, end);
     const span = seg[seg.length - 1]!.toHz - seg[0]!.fromHz;
     if (span >= minSpanHz) {
-      const rise = seg.reduce((a, c) => a + c.floorDb, 0) / seg.length - base;
+      const rise = seg.reduce((a, c, k) => a + c.floorDb - base[start + k]!, 0) / seg.length;
       out.push({ fromHz: seg[0]!.fromHz, toHz: seg[seg.length - 1]!.toHz, riseDb: r1(rise), source: broadbandSource(seg[0]!.fromHz, seg[seg.length - 1]!.toHz) });
     }
     start = -1;
   };
   chunks.forEach((c, i) => {
-    if (c.floorDb - base >= riseDb) { if (start < 0) start = i; } else flush(i);
+    if (c.floorDb - base[i]! >= riseDb) { if (start < 0) start = i; } else flush(i);
   });
   flush(chunks.length);
   return out;
