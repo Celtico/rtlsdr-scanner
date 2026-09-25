@@ -1,6 +1,6 @@
 // Shared types between server and web. Frequencies are always integer Hz.
 
-export type Mode = 'idle' | 'survey' | 'devices' | 'adsb' | 'hunt' | 'satellite';
+export type Mode = 'idle' | 'survey' | 'devices' | 'adsb' | 'hunt' | 'satellite' | 'audio';
 
 export type DongleState = 'unknown' | 'connected' | 'in-use' | 'busy' | 'missing' | 'error';
 
@@ -50,8 +50,15 @@ export interface SatelliteConfig {
   timeoutS: number;
 }
 
+/** Broadcast audio (FM band only): rtl_fm wide-band FM → 48 kHz mono PCM streamed to the browser. */
+export interface AudioConfig {
+  freqHz: number;
+  gainDb: number | null;
+}
+
 export type ModeConfig =
   | { mode: 'idle' }
+  | { mode: 'audio'; config: AudioConfig }
   | { mode: 'survey'; config: SurveyConfig }
   | { mode: 'devices'; config: DevicesConfig }
   | { mode: 'adsb'; config: AdsbConfig }
@@ -63,10 +70,10 @@ export interface Status {
   dongle: DongleInfo;
   scanId: number | null;
   startedAt: number | null;
-  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | SatelliteConfig | null;
+  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | SatelliteConfig | AudioConfig | null;
   lastError: { code: SdrErrorCode; message: string; at: number } | null;
   counters: { sweeps: number; signals: number; devices: number; planes: number };
-  tools: Record<'rtl_test' | 'rtl_power' | 'rtl_433' | 'rtl_adsb' | 'rtl_sdr' | 'satdump', boolean>;
+  tools: Record<'rtl_test' | 'rtl_power' | 'rtl_433' | 'rtl_adsb' | 'rtl_sdr' | 'rtl_fm' | 'satdump', boolean>;
 }
 
 export interface Band {
@@ -162,7 +169,7 @@ export interface HuntLevel {
   peakDbfs: number;
 }
 
-export type ScanKind = 'survey' | 'devices' | 'adsb' | 'hunt' | 'satellite';
+export type ScanKind = 'survey' | 'devices' | 'adsb' | 'hunt' | 'satellite' | 'audio';
 
 export interface SatInfo {
   /** Key used in configs and TLE cache, e.g. "NOAA 19". */
@@ -209,7 +216,7 @@ export interface Scan {
   kind: ScanKind;
   startedAt: number;
   endedAt: number | null;
-  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | SatelliteConfig;
+  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | SatelliteConfig | AudioConfig;
   /** Per-kind result summary written when the scan ends (hunt: { maxDbfs, maxAt, samples }). */
   summary: Record<string, unknown> | null;
   sweeps: number;
@@ -247,6 +254,10 @@ export const DEFAULT_DEVICES: DevicesConfig = {
 };
 
 export const DEFAULT_ADSB: AdsbConfig = { gainDb: null };
+
+export const AUDIO_SAMPLE_RATE = 48_000;
+/** Only broadcast radio may be listened to (see CLAUDE.md): the FM band. */
+export const FM_BAND = { fromHz: 87_500_000, toHz: 108_000_000 };
 
 export const DEFAULT_HUNT: HuntConfig = { freqHz: 868_100_000, gainDb: 29.7, sampleRate: 250_000 };
 

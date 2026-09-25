@@ -14,8 +14,8 @@ import { loadTles, predictAll, satInfo, SATELLITES } from './sdr/satellite.js';
 import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
 import { normalize, sep } from 'node:path';
 import {
-  DEFAULT_ADSB, DEFAULT_DEVICES, DEFAULT_HOME, DEFAULT_HUNT, DEFAULT_SURVEY,
-  type AdsbConfig, type DevicesConfig, type HuntConfig, type ModeConfig, type SatCapture, type SurveyConfig, type WsMessage,
+  AUDIO_SAMPLE_RATE, DEFAULT_ADSB, DEFAULT_DEVICES, DEFAULT_HOME, DEFAULT_HUNT, DEFAULT_SURVEY,
+  type AdsbConfig, type AudioConfig, type DevicesConfig, type HuntConfig, type ModeConfig, type SatCapture, type SurveyConfig, type WsMessage,
 } from './types.js';
 
 const PORT = Number(process.env.PORT ?? 4000);
@@ -94,6 +94,11 @@ function parseModeBody(body: unknown): ModeConfig {
         sampleRate: Math.round(num(cfg.sampleRate, DEFAULT_HUNT.sampleRate)),
       };
       return { mode: 'hunt', config };
+    }
+    case 'audio': {
+      // FM channels sit on a 100 kHz grid; snap so a click on a detected peak lands on the station.
+      const config: AudioConfig = { freqHz: Math.round(num(cfg.freqHz, 0) / 100_000) * 100_000, gainDb: cfg.gainDb == null ? null : num(cfg.gainDb, 0) };
+      return { mode: 'audio', config };
     }
     case 'satellite':
       throw Object.assign(new Error('El mode satellite es llança des de /api/satellite/captures'), { statusCode: 400 });
@@ -248,6 +253,29 @@ app.get<{ Params: { kind: ExportKind }; Querystring: { format?: string; scanId?:
     return reply.type('application/json').send(JSON.stringify(rows, null, 2));
   },
 );
+
+// ---------- audio stream ----------
+
+/** Raw PCM (s16le mono, 48 kHz) of the FM station being demodulated. Several browsers may listen at once. */
+app.get('/api/audio/stream', async (req, reply) => {
+  if (manager.status().mode !== 'audio') return reply.code(409).send({ error: 'No hi ha cap emissora en reproducció' });
+  reply.raw.writeHead(200, {
+    'content-type': 'application/octet-stream',
+    'cache-control': 'no-store',
+    'x-sample-rate': String(AUDIO_SAMPLE_RATE),
+    'x-channels': '1',
+  });
+  const onChunk = (chunk: Uint8Array) => { if (!reply.raw.writableEnded) reply.raw.write(chunk); };
+  const onStatus = (m: WsMessage) => { if (m.type === 'status' && m.status.mode !== 'audio') reply.raw.end(); };
+  manager.on('audio', onChunk);
+  manager.on('message', onStatus);
+  await new Promise<void>((resolve) => {
+    const done = () => { manager.off('audio', onChunk); manager.off('message', onStatus); resolve(); };
+    req.raw.on('close', done);
+    reply.raw.on('close', done);
+  });
+  return reply;
+});
 
 // ---------- satellites ----------
 

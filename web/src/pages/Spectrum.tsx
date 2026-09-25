@@ -6,6 +6,7 @@ import { useSdr } from '@/store';
 import { api } from '@/lib/api';
 import { formatTime } from '@/lib/format';
 import { Waterfall } from '@/components/Waterfall';
+import { audioEngine, useAudioEngine } from '@/lib/audioEngine';
 import { SignalsTable } from '@/components/SignalsTable';
 
 const PRESETS: { label: string; fromMHz: number; toMHz: number; stepKHz: number }[] = [
@@ -44,6 +45,7 @@ export function Spectrum() {
   const [marked, setMarked] = useState<number | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const running = status?.mode === 'survey';
+  const audio = useAudioEngine();
   const runningConfig = running && status.config && 'fromHz' in status.config ? status.config : null;
   // Mirror the running survey's configuration (it may have been started from another page or client).
   useEffect(() => { if (runningConfig) setForm(toForm(runningConfig)); }, [runningConfig]);
@@ -137,12 +139,19 @@ export function Spectrum() {
         <Card.Header>
           <HStack justify="space-between" flexWrap="wrap">
             <Card.Title>Senyals ({signals.length})</Card.Title>
-            <Text fontSize="sm" color="fg.muted">Clica un senyal per marcar-lo al waterfall.</Text>
+            <Text fontSize="sm" color="fg.muted">Clica un senyal per marcar-lo al waterfall. Les emissores FM tenen botó d’escolta (atura l’escombrat: el dongle només fa una cosa alhora).</Text>
           </HStack>
         </Card.Header>
         <Card.Body pt="0">
           <Box maxH="lg" overflowY="auto">
-            <SignalsTable signals={signals} selectedId={selected} onSelect={pick} />
+            <SignalsTable
+              signals={signals}
+              selectedId={selected}
+              onSelect={pick}
+              playingHz={audio.playing ? audio.freqHz : null}
+              onPlay={(s) => { pick(s); void audioEngine.play(s.freqHz); }}
+              onStop={() => audioEngine.stop()}
+            />
           </Box>
         </Card.Body>
       </Card.Root>

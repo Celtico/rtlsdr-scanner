@@ -7,4 +7,5 @@ export const MODE_LABEL: Record<Mode, string> = {
   adsb: 'ADS-B',
   hunt: 'Hunt',
   satellite: 'Satèl·lit',
+  audio: 'Ràdio FM',
 };

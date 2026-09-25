@@ -2,8 +2,10 @@ import { EventEmitter } from 'node:events';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { Db } from '../db.js';
-import type {
-  AdsbConfig, DevicesConfig, DongleInfo, HuntConfig, Mode, ModeConfig, SatelliteConfig, SdrErrorCode, Signal, Status, SurveyConfig, WsMessage,
+import {
+  AUDIO_SAMPLE_RATE, FM_BAND,
+  type AdsbConfig, type AudioConfig, type DevicesConfig, type DongleInfo, type HuntConfig, type Mode, type ModeConfig, type SatelliteConfig,
+  type SdrErrorCode, type Signal, type Status, type SurveyConfig, type WsMessage,
 } from '../types.js';
 import { SdrProcess, stopAll, type SdrError } from './process.js';
 import { rtlPowerArgs, SignalTracker, SweepAssembler, validateSurveyConfig } from './survey.js';
@@ -14,14 +16,20 @@ import { findSatdump, listImages, satdumpArgs } from './satellite.js';
 
 const execFileP = promisify(execFile);
 
-type Tool = 'rtl_test' | 'rtl_power' | 'rtl_433' | 'rtl_adsb' | 'rtl_sdr' | 'satdump';
+export function validateAudioConfig(c: AudioConfig): string | null {
+  if (c.freqHz < FM_BAND.fromHz || c.freqHz > FM_BAND.toHz) return 'Només es pot escoltar la banda de radiodifusió FM (87,5–108 MHz).';
+  if (c.gainDb !== null && (c.gainDb < 0 || c.gainDb > 50)) return 'El guany ha d’estar entre 0 i 50 dB.';
+  return null;
+}
+
+type Tool = 'rtl_test' | 'rtl_power' | 'rtl_433' | 'rtl_adsb' | 'rtl_sdr' | 'rtl_fm' | 'satdump';
 
 interface Active {
   mode: Exclude<Mode, 'idle'>;
   proc: SdrProcess;
   scanId: number;
   startedAt: number;
-  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | SatelliteConfig;
+  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | SatelliteConfig | AudioConfig;
   counters: { sweeps: number; signals: number; devices: number; planes: number };
   /** Devices seen in this scan (keys), for the counter. */
   seenKeys: Set<string>;
@@ -37,12 +45,12 @@ interface Active {
  * Sole owner of the dongle. Serialises every mode change so at most one rtl_* process is alive,
  * and always waits for the previous process to release the USB interface before starting the next.
  */
-export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
+export class SdrManager extends EventEmitter<{ message: [WsMessage]; audio: [Uint8Array] }> {
   private active: Active | null = null;
   private queue: Promise<void> = Promise.resolve();
   private dongle: DongleInfo = { state: 'unknown', name: null, tuner: null, message: null, checkedAt: null };
   private lastError: Status['lastError'] = null;
-  private tools: Record<Tool, boolean> = { rtl_test: false, rtl_power: false, rtl_433: false, rtl_adsb: false, rtl_sdr: false, satdump: false };
+  private tools: Record<Tool, boolean> = { rtl_test: false, rtl_power: false, rtl_433: false, rtl_adsb: false, rtl_sdr: false, rtl_fm: false, satdump: false };
 
   constructor(private readonly db: Db) {
     super();
@@ -141,10 +149,11 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
     if (req.mode !== 'idle') {
       const err = req.mode === 'survey' ? validateSurveyConfig(req.config)
         : req.mode === 'devices' ? validateDevicesConfig(req.config)
-        : req.mode === 'hunt' ? validateHuntConfig(req.config) : null;
+        : req.mode === 'hunt' ? validateHuntConfig(req.config)
+        : req.mode === 'audio' ? validateAudioConfig(req.config) : null;
       if (err) throw new Error(err);
       const tool: Tool = req.mode === 'survey' ? 'rtl_power' : req.mode === 'devices' ? 'rtl_433' : req.mode === 'hunt' ? 'rtl_sdr'
-        : req.mode === 'satellite' ? 'satdump' : 'rtl_adsb';
+        : req.mode === 'satellite' ? 'satdump' : req.mode === 'audio' ? 'rtl_fm' : 'rtl_adsb';
       if (!this.tools[tool]) throw new Error(`No trobo "${tool}". Instal·la'l amb brew install librtlsdr rtl_433.`);
     }
     await this.stopActive();
@@ -157,6 +166,7 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
     else if (req.mode === 'devices') this.startDevices(req.config);
     else if (req.mode === 'hunt') this.startHunt(req.config);
     else if (req.mode === 'satellite') this.startSatellite(req.config);
+    else if (req.mode === 'audio') this.startAudio(req.config);
     else this.startAdsb(req.config);
     this.dongle = { ...this.dongle, state: 'in-use', message: null };
     this.emitStatus();
@@ -353,6 +363,25 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
     this.active = ref.a;
     const running = this.db.updateSatCapture(cap.id, { status: 'running' });
     if (running) this.emit('message', { type: 'satellite:capture', capture: running });
+  }
+
+  // ---------- audio (FM broadcast) ----------
+
+  private startAudio(config: AudioConfig): void {
+    const scanId = this.db.createScan('audio', config);
+    const ref: { a: Active | null } = { a: null };
+    const args = ['-f', String(config.freqHz), '-M', 'wbfm', '-s', '200k', '-r', String(AUDIO_SAMPLE_RATE), '-E', 'deemp'];
+    if (config.gainDb !== null) args.push('-g', String(config.gainDb));
+    args.push('-');
+    const proc = new SdrProcess('rtl_fm', args, {
+      ...this.baseHandlers(() => ref.a!),
+      binary: true,
+      onData: (chunk) => {
+        if (ref.a && this.active === ref.a) this.emit('audio', chunk);
+      },
+    });
+    ref.a = this.newActive('audio', config, proc, scanId);
+    this.active = ref.a;
   }
 
   // ---------- shutdown ----------

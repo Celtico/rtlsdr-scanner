@@ -1,6 +1,7 @@
-import { Badge, Box, HStack, Table, Text } from '@chakra-ui/react';
+import { Badge, Box, HStack, IconButton, Table, Text } from '@chakra-ui/react';
 import { useMemo, useState } from 'react';
-import { LuArrowDown, LuArrowUp, LuArrowUpDown, LuLock } from 'react-icons/lu';
+import { LuArrowDown, LuArrowUp, LuArrowUpDown, LuLock, LuPlay, LuTv, LuCircleStop } from 'react-icons/lu';
+import { isFmBroadcast, mediaNote } from '@/lib/media';
 import type { Signal } from '@shared/types';
 import { formatMHz, formatWidth } from '@/lib/format';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -20,9 +21,13 @@ export interface SignalsTableProps {
   signals: Signal[];
   selectedId: string | null;
   onSelect: (s: Signal) => void;
+  /** Frequency currently playing (FM), to show the stop state. */
+  playingHz?: number | null;
+  onPlay?: (s: Signal) => void;
+  onStop?: () => void;
 }
 
-export function SignalsTable({ signals, selectedId, onSelect }: SignalsTableProps) {
+export function SignalsTable({ signals, selectedId, onSelect, playingHz = null, onPlay, onStop }: SignalsTableProps) {
   const [sort, setSort] = useState<{ key: Key; dir: 'asc' | 'desc' }>({ key: 'excessDb', dir: 'desc' });
 
   const rows = useMemo(() => {
@@ -48,6 +53,7 @@ export function SignalsTable({ signals, selectedId, onSelect }: SignalsTableProp
       <Table.Root size="sm" interactive stickyHeader>
         <Table.Header>
           <Table.Row>
+            {onPlay && <Table.ColumnHeader w="12" aria-label="Reproducció" />}
             {COLS.map((c) => (
               <Table.ColumnHeader key={c.key} textAlign={c.numeric ? 'end' : 'start'} cursor="pointer" onClick={() => toggle(c.key)} userSelect="none">
                 <HStack gap="1" justify={c.numeric ? 'flex-end' : 'flex-start'}>
@@ -69,6 +75,25 @@ export function SignalsTable({ signals, selectedId, onSelect }: SignalsTableProp
               bg={selectedId === s.id ? 'brand.subtle' : undefined}
               data-selected={selectedId === s.id ? '' : undefined}
             >
+              {onPlay && (
+                <Table.Cell onClick={(e) => e.stopPropagation()}>
+                  {isFmBroadcast(s) ? (
+                    playingHz !== null && Math.abs(playingHz - s.freqHz) < 150_000 ? (
+                      <Tooltip content="Atura">
+                        <IconButton aria-label="Atura la reproducció" size="xs" colorPalette="red" variant="subtle" onClick={onStop}><LuCircleStop /></IconButton>
+                      </Tooltip>
+                    ) : (
+                      <Tooltip content={`Escolta ${formatMHz(s.freqHz, 1)} (FM)`}>
+                        <IconButton aria-label={`Escolta ${formatMHz(s.freqHz, 1)}`} size="xs" colorPalette="brand" variant="subtle" onClick={() => onPlay(s)}><LuPlay /></IconButton>
+                      </Tooltip>
+                    )
+                  ) : mediaNote(s) ? (
+                    <Tooltip content={mediaNote(s)!}>
+                      <Box color="fg.muted" display="inline-flex" p="1" aria-label="No reproduïble"><LuTv /></Box>
+                    </Tooltip>
+                  ) : null}
+                </Table.Cell>
+              )}
               <Table.Cell textAlign="end" fontFamily="mono" fontVariantNumeric="tabular-nums">{formatMHz(s.freqHz)}</Table.Cell>
               <Table.Cell textAlign="end" fontVariantNumeric="tabular-nums">{formatWidth(s.widthHz)}</Table.Cell>
               <Table.Cell textAlign="end" fontVariantNumeric="tabular-nums">{s.peakDb.toFixed(1)} dB</Table.Cell>

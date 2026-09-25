@@ -10,6 +10,7 @@ import { api } from '@/lib/api';
 import { ColorModeButton } from '@/components/ui/color-mode';
 import { Tooltip } from '@/components/ui/tooltip';
 import { DongleBadge } from '@/components/DongleBadge';
+import { AudioPlayer } from '@/components/AudioPlayer';
 
 const NAV: { to: string; label: string; icon: ReactNode }[] = [
   { to: '/', label: 'Tauler', icon: <LuLayoutDashboard /> },
@@ -148,6 +149,7 @@ export function Layout() {
           </Heading>
           <Box flex="1" />
           <HStack gap="2" flexWrap="wrap" justify="flex-end">
+            <AudioPlayer />
             {!connected && (
               <Badge colorPalette="red" variant="subtle">
                 <Spinner size="xs" /> Reconnectant…
