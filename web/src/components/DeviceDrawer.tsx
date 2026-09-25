@@ -156,7 +156,7 @@ export function DeviceDrawer({ device, onClose, onUpdated }: DeviceDrawerProps) 
                         <Text color="fg.muted" fontSize="sm">Calen almenys dues lectures per dibuixar l’històric.</Text>
                       ) : (
                         <Chart.Root chart={chart} h="52">
-                          <LineChart data={chart.data} margin={{ left: -10, right: 8, top: 8 }}>
+                          <LineChart responsive data={chart.data} margin={{ left: -10, right: 8, top: 8 }}>
                             <CartesianGrid stroke={chart.color('border')} vertical={false} />
                             <XAxis dataKey={chart.key('ts')} tickFormatter={(v: number) => formatTime(v)} stroke={chart.color('border')} fontSize={11} minTickGap={40} />
                             <YAxis stroke={chart.color('border')} fontSize={11} domain={['auto', 'auto']} />

@@ -13,7 +13,7 @@ export function Planes() {
 
   return (
     <Stack gap="4">
-      <Card.Root size="sm">
+      <Card.Root size="sm" minW="0" overflow="hidden">
         <Card.Body>
           <HStack justify="space-between" flexWrap="wrap" gap="3">
             <Text color="fg.muted" fontSize="sm">
@@ -33,7 +33,7 @@ export function Planes() {
         </Card.Body>
       </Card.Root>
 
-      <Card.Root size="sm">
+      <Card.Root size="sm" minW="0" overflow="hidden">
         <Card.Body p="0">
           {rows.length ? (
             <Box overflowX="auto">

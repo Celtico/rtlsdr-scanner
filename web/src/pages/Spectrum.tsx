@@ -55,8 +55,8 @@ export function Spectrum() {
   const last = sweeps[sweeps.length - 1];
 
   return (
-    <Stack gap="4">
-      <Card.Root size="sm">
+    <Stack gap="4" minW="0">
+      <Card.Root size="sm" minW="0" overflow="hidden">
         <Card.Body>
           <Stack gap="3">
             <SimpleGrid columns={{ base: 2, md: 4, xl: 7 }} gap="3" alignItems="end">
@@ -133,7 +133,7 @@ export function Spectrum() {
 
       <Waterfall sweeps={sweeps} bands={bands} markedHz={marked} onPick={(hz) => { setMarked(hz); setSelected(null); }} />
 
-      <Card.Root size="sm">
+      <Card.Root size="sm" minW="0" overflow="hidden">
         <Card.Header>
           <HStack justify="space-between" flexWrap="wrap">
             <Card.Title>Senyals ({signals.length})</Card.Title>

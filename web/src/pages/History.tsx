@@ -64,7 +64,7 @@ export function History() {
 
   return (
     <Stack gap="4">
-      <Card.Root size="sm">
+      <Card.Root size="sm" minW="0" overflow="hidden">
         <Card.Header>
           <HStack justify="space-between">
             <Box>

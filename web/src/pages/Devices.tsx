@@ -35,15 +35,15 @@ export function Devices() {
 
   return (
     <Stack gap="4">
-      <Card.Root size="sm">
+      <Card.Root size="sm" minW="0" overflow="hidden">
         <Card.Body>
           <HStack justify="space-between" flexWrap="wrap" gap="3">
-            <HStack gap="3" flexWrap="wrap">
+            <HStack gap="3" flexWrap="wrap" minW="0">
               <SegmentGroup.Root value={filter} onValueChange={(e) => setFilter((e.value ?? 'all') as Filter)} size="sm">
                 <SegmentGroup.Indicator />
                 <SegmentGroup.Items items={[
                   { value: 'all', label: `Tots (${devices.length})` },
-                  { value: 'own', label: `Probablement meus (${devices.filter((d) => d.likelyOwn).length})` },
+                  { value: 'own', label: `Meus (${devices.filter((d) => d.likelyOwn).length})` },
                   { value: 'neighbours', label: `Veïns (${devices.filter((d) => !d.likelyOwn).length})` },
                 ]} />
               </SegmentGroup.Root>
@@ -66,12 +66,12 @@ export function Devices() {
             </HStack>
           </HStack>
           <Text fontSize="xs" color="fg.muted" mt="2">
-            «Probablement meu» = RSSI fort (&gt; −8 dB) i estable (±3 dB) en almenys 3 missatges. La resta són veïns o de lluny.
+            «Meu» = RSSI fort (&gt; −8 dB) i estable (±3 dB) en almenys 3 missatges. La resta són veïns o de lluny.
           </Text>
         </Card.Body>
       </Card.Root>
 
-      <Card.Root size="sm">
+      <Card.Root size="sm" minW="0" overflow="hidden">
         <Card.Body p="0">
           {rows.length ? (
             <Box overflowX="auto">

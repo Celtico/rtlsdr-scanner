@@ -172,7 +172,7 @@ export function Layout() {
           </HStack>
         </Flex>
 
-        <Box as="main" flex="1" p={{ base: '3', md: '6' }} minW="0">
+        <Box as="main" flex="1" p={{ base: '3', md: '6' }} minW="0" maxW="100vw" overflowX="hidden">
           <Outlet />
         </Box>
       </Flex>

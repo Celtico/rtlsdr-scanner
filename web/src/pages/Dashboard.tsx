@@ -71,7 +71,7 @@ export function Dashboard() {
           <Card.Body>
             {byBand.length ? (
               <Chart.Root chart={chart} h="64">
-                <BarChart data={chart.data} layout="vertical" margin={{ left: 8, right: 16 }}>
+                <BarChart responsive data={chart.data} layout="vertical" margin={{ left: 8, right: 16 }}>
                   <CartesianGrid stroke={chart.color('border')} horizontal={false} />
                   <XAxis type="number" allowDecimals={false} stroke={chart.color('border')} fontSize={11} />
                   <YAxis type="category" dataKey={chart.key('band')} width={170} stroke={chart.color('border')} fontSize={11} tickFormatter={(v: string) => (v.length > 26 ? `${v.slice(0, 25)}…` : v)} />
