@@ -1,0 +1,22 @@
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { Layout } from '@/components/Layout';
+import { Dashboard } from '@/pages/Dashboard';
+import { Spectrum } from '@/pages/Spectrum';
+import { Devices } from '@/pages/Devices';
+import { Planes } from '@/pages/Planes';
+import { History } from '@/pages/History';
+
+export function App() {
+  return (
+    <Routes>
+      <Route element={<Layout />}>
+        <Route index element={<Dashboard />} />
+        <Route path="espectre" element={<Spectrum />} />
+        <Route path="dispositius" element={<Devices />} />
+        <Route path="avions" element={<Planes />} />
+        <Route path="historic" element={<History />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
+  );
+}
