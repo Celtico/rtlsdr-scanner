@@ -210,6 +210,8 @@ export interface Scan {
   startedAt: number;
   endedAt: number | null;
   config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | SatelliteConfig;
+  /** Per-kind result summary written when the scan ends (hunt: { maxDbfs, maxAt, samples }). */
+  summary: Record<string, unknown> | null;
   sweeps: number;
   signals: number;
   devices: number;

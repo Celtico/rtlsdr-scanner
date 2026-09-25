@@ -96,6 +96,7 @@ const MIGRATIONS: [table: string, column: string, ddl: string][] = [
   ['devices', 'owner', 'ALTER TABLE devices ADD COLUMN owner TEXT'],
   ['devices', 'bearing_deg', 'ALTER TABLE devices ADD COLUMN bearing_deg REAL'],
   ['planes', 'country', 'ALTER TABLE planes ADD COLUMN country TEXT'],
+  ['scans', 'summary', 'ALTER TABLE scans ADD COLUMN summary TEXT'],
 ];
 
 interface ScanRow {
@@ -104,6 +105,7 @@ interface ScanRow {
   started_at: number;
   ended_at: number | null;
   config: string;
+  summary: string | null;
   sweeps: number;
   signals: number;
   devices: number;
@@ -143,7 +145,7 @@ const DEVICE_SELECT = `
 function scanFromRow(r: ScanRow): Scan {
   return {
     id: r.id, kind: r.kind, startedAt: r.started_at, endedAt: r.ended_at, config: JSON.parse(r.config),
-    sweeps: r.sweeps, signals: r.signals, devices: r.devices, planes: r.planes,
+    summary: r.summary ? JSON.parse(r.summary) : null, sweeps: r.sweeps, signals: r.signals, devices: r.devices, planes: r.planes,
   };
 }
 
@@ -211,8 +213,9 @@ export class Db {
     return Number(r.lastInsertRowid);
   }
 
-  endScan(id: number): void {
+  endScan(id: number, summary?: Record<string, unknown>): void {
     this.db.prepare('UPDATE scans SET ended_at = ? WHERE id = ? AND ended_at IS NULL').run(Date.now(), id);
+    if (summary) this.db.prepare('UPDATE scans SET summary = ? WHERE id = ?').run(JSON.stringify(summary), id);
   }
 
   /** Mark scans left open by a crash as ended. */

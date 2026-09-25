@@ -28,6 +28,9 @@ interface Active {
   signals: Signal[];
   /** Last stderr lines (satdump logs there). */
   satLog: string[];
+  /** Hunt mode: the live meter, for the end-of-scan summary. */
+  huntMeter?: LevelMeter;
+  huntSamples?: number;
 }
 
 /**
@@ -164,9 +167,16 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
     if (!a) return;
     this.active = null;
     await a.proc.stop();
-    this.db.endScan(a.scanId);
+    this.db.endScan(a.scanId, this.scanSummary(a));
     if (a.mode === 'satellite') this.finishSatellite(a, 'cancelled');
     if (this.dongle.state === 'in-use') this.dongle = { ...this.dongle, state: 'connected' };
+  }
+
+  private scanSummary(a: Active): Record<string, unknown> | undefined {
+    if (a.mode === 'hunt' && a.huntMeter) {
+      return { maxDbfs: Number.isFinite(a.huntMeter.maxDbfs) ? a.huntMeter.maxDbfs : null, maxAt: a.huntMeter.maxAt, samples: a.huntSamples ?? 0 };
+    }
+    return undefined;
   }
 
   /** Marks the capture finished and collects the decoded images (SatDump writes them at the end). */
@@ -185,7 +195,7 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
   private onChildExit(a: Active, code: number | null, signal: NodeJS.Signals | null): void {
     if (this.active !== a) return; // we stopped it deliberately
     this.active = null;
-    this.db.endScan(a.scanId);
+    this.db.endScan(a.scanId, this.scanSummary(a));
     if (this.dongle.state === 'in-use') this.dongle = { ...this.dongle, state: 'connected' };
     if (a.mode === 'satellite') {
       // satdump exits by itself when the timeout ends: that's the normal end of a capture.
@@ -309,11 +319,13 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
         const active = ref.a;
         if (!active || this.active !== active) return;
         for (const level of meter.push(chunk)) {
+          active.huntSamples = (active.huntSamples ?? 0) + 1;
           this.emit('message', { type: 'hunt:level', level, maxDbfs: meter.maxDbfs, maxAt: meter.maxAt });
         }
       },
     });
     ref.a = this.newActive('hunt', config, proc, scanId);
+    ref.a.huntMeter = meter;
     this.active = ref.a;
   }
 
@@ -348,7 +360,7 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
   async shutdown(): Promise<void> {
     const a = this.active;
     this.active = null;
-    if (a) this.db.endScan(a.scanId);
+    if (a) this.db.endScan(a.scanId, this.scanSummary(a));
     await stopAll();
   }
 }
