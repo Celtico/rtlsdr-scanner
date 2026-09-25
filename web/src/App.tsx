@@ -8,6 +8,7 @@ import { History } from '@/pages/History';
 import { Radar } from '@/pages/Radar';
 import { Audit } from '@/pages/Audit';
 import { Hunt } from '@/pages/Hunt';
+import { Satellites } from '@/pages/Satellites';
 
 export function App() {
   return (
@@ -20,6 +21,7 @@ export function App() {
         <Route path="radar" element={<Radar />} />
         <Route path="auditoria" element={<Audit />} />
         <Route path="hunt" element={<Hunt />} />
+        <Route path="satellits" element={<Satellites />} />
         <Route path="historic" element={<History />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

@@ -1,6 +1,6 @@
 // Shared types between server and web. Frequencies are always integer Hz.
 
-export type Mode = 'idle' | 'survey' | 'devices' | 'adsb' | 'hunt';
+export type Mode = 'idle' | 'survey' | 'devices' | 'adsb' | 'hunt' | 'satellite';
 
 export type DongleState = 'unknown' | 'connected' | 'in-use' | 'busy' | 'missing' | 'error';
 
@@ -40,22 +40,33 @@ export interface HuntConfig {
   sampleRate: number;
 }
 
+/** Satellite capture: SatDump live pipeline for one pass. */
+export interface SatelliteConfig {
+  captureId: number;
+  satellite: string;
+  freqHz: number;
+  pipeline: string;
+  gainDb: number;
+  timeoutS: number;
+}
+
 export type ModeConfig =
   | { mode: 'idle' }
   | { mode: 'survey'; config: SurveyConfig }
   | { mode: 'devices'; config: DevicesConfig }
   | { mode: 'adsb'; config: AdsbConfig }
-  | { mode: 'hunt'; config: HuntConfig };
+  | { mode: 'hunt'; config: HuntConfig }
+  | { mode: 'satellite'; config: SatelliteConfig };
 
 export interface Status {
   mode: Mode;
   dongle: DongleInfo;
   scanId: number | null;
   startedAt: number | null;
-  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | null;
+  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | SatelliteConfig | null;
   lastError: { code: SdrErrorCode; message: string; at: number } | null;
   counters: { sweeps: number; signals: number; devices: number; planes: number };
-  tools: Record<'rtl_test' | 'rtl_power' | 'rtl_433' | 'rtl_adsb' | 'rtl_sdr', boolean>;
+  tools: Record<'rtl_test' | 'rtl_power' | 'rtl_433' | 'rtl_adsb' | 'rtl_sdr' | 'satdump', boolean>;
 }
 
 export interface Band {
@@ -151,14 +162,54 @@ export interface HuntLevel {
   peakDbfs: number;
 }
 
-export type ScanKind = 'survey' | 'devices' | 'adsb' | 'hunt';
+export type ScanKind = 'survey' | 'devices' | 'adsb' | 'hunt' | 'satellite';
+
+export interface SatInfo {
+  /** Key used in configs and TLE cache, e.g. "NOAA 19". */
+  name: string;
+  catnr: number;
+  freqHz: number;
+  pipeline: string;
+  kind: 'APT' | 'LRPT';
+  note: string | null;
+}
+
+export interface SatPass {
+  id: string;
+  satellite: string;
+  aos: number;
+  los: number;
+  maxElevationDeg: number;
+  maxElevationAt: number;
+  aosAzimuthDeg: number;
+  losAzimuthDeg: number;
+  durationS: number;
+}
+
+export type SatCaptureStatus = 'scheduled' | 'running' | 'done' | 'failed' | 'cancelled';
+
+export interface SatCapture {
+  id: number;
+  satellite: string;
+  aos: number;
+  los: number;
+  maxElevationDeg: number;
+  freqHz: number;
+  pipeline: string;
+  gainDb: number;
+  status: SatCaptureStatus;
+  dir: string;
+  images: string[];
+  log: string | null;
+  createdAt: number;
+}
 
 export interface Scan {
   id: number;
   kind: ScanKind;
   startedAt: number;
   endedAt: number | null;
-  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig;
+  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | SatelliteConfig;
   sweeps: number;
   signals: number;
   devices: number;
@@ -173,6 +224,7 @@ export type WsMessage =
   | { type: 'device:update'; device: Device }
   | { type: 'adsb:plane'; plane: Plane }
   | { type: 'hunt:level'; level: HuntLevel; maxDbfs: number; maxAt: number | null }
+  | { type: 'satellite:capture'; capture: SatCapture }
   | { type: 'error'; code: SdrErrorCode; message: string }
   | { type: 'log'; line: string };
 

@@ -6,4 +6,5 @@ export const MODE_LABEL: Record<Mode, string> = {
   devices: 'Dispositius',
   adsb: 'ADS-B',
   hunt: 'Hunt',
+  satellite: 'Satèl·lit',
 };

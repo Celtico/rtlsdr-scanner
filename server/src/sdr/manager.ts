@@ -3,28 +3,31 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { Db } from '../db.js';
 import type {
-  AdsbConfig, DevicesConfig, DongleInfo, HuntConfig, Mode, ModeConfig, SdrErrorCode, Signal, Status, SurveyConfig, WsMessage,
+  AdsbConfig, DevicesConfig, DongleInfo, HuntConfig, Mode, ModeConfig, SatelliteConfig, SdrErrorCode, Signal, Status, SurveyConfig, WsMessage,
 } from '../types.js';
 import { SdrProcess, stopAll, type SdrError } from './process.js';
 import { rtlPowerArgs, SignalTracker, SweepAssembler, validateSurveyConfig } from './survey.js';
 import { parseRtl433Line, rtl433Args, validateDevicesConfig } from './devices.js';
 import { parseAdsbLine, PlaneTracker, rtlAdsbArgs, toPlane } from './adsb.js';
 import { LevelMeter, rtlSdrArgs, validateHuntConfig } from './hunt.js';
+import { findSatdump, listImages, satdumpArgs } from './satellite.js';
 
 const execFileP = promisify(execFile);
 
-type Tool = 'rtl_test' | 'rtl_power' | 'rtl_433' | 'rtl_adsb' | 'rtl_sdr';
+type Tool = 'rtl_test' | 'rtl_power' | 'rtl_433' | 'rtl_adsb' | 'rtl_sdr' | 'satdump';
 
 interface Active {
   mode: Exclude<Mode, 'idle'>;
   proc: SdrProcess;
   scanId: number;
   startedAt: number;
-  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig;
+  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | SatelliteConfig;
   counters: { sweeps: number; signals: number; devices: number; planes: number };
   /** Devices seen in this scan (keys), for the counter. */
   seenKeys: Set<string>;
   signals: Signal[];
+  /** Last stderr lines (satdump logs there). */
+  satLog: string[];
 }
 
 /**
@@ -36,7 +39,7 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
   private queue: Promise<void> = Promise.resolve();
   private dongle: DongleInfo = { state: 'unknown', name: null, tuner: null, message: null, checkedAt: null };
   private lastError: Status['lastError'] = null;
-  private tools: Record<Tool, boolean> = { rtl_test: false, rtl_power: false, rtl_433: false, rtl_adsb: false, rtl_sdr: false };
+  private tools: Record<Tool, boolean> = { rtl_test: false, rtl_power: false, rtl_433: false, rtl_adsb: false, rtl_sdr: false, satdump: false };
 
   constructor(private readonly db: Db) {
     super();
@@ -76,8 +79,15 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
 
   // ---------- tool / dongle detection ----------
 
+  private satdumpBin: string | null = null;
+
   async detectTools(): Promise<void> {
     for (const t of Object.keys(this.tools) as Tool[]) {
+      if (t === 'satdump') {
+        this.satdumpBin = findSatdump();
+        this.tools.satdump = this.satdumpBin !== null;
+        continue;
+      }
       try {
         await execFileP('which', [t]);
         this.tools[t] = true;
@@ -130,7 +140,8 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
         : req.mode === 'devices' ? validateDevicesConfig(req.config)
         : req.mode === 'hunt' ? validateHuntConfig(req.config) : null;
       if (err) throw new Error(err);
-      const tool: Tool = req.mode === 'survey' ? 'rtl_power' : req.mode === 'devices' ? 'rtl_433' : req.mode === 'hunt' ? 'rtl_sdr' : 'rtl_adsb';
+      const tool: Tool = req.mode === 'survey' ? 'rtl_power' : req.mode === 'devices' ? 'rtl_433' : req.mode === 'hunt' ? 'rtl_sdr'
+        : req.mode === 'satellite' ? 'satdump' : 'rtl_adsb';
       if (!this.tools[tool]) throw new Error(`No trobo "${tool}". Instal·la'l amb brew install librtlsdr rtl_433.`);
     }
     await this.stopActive();
@@ -142,6 +153,7 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
     if (req.mode === 'survey') this.startSurvey(req.config);
     else if (req.mode === 'devices') this.startDevices(req.config);
     else if (req.mode === 'hunt') this.startHunt(req.config);
+    else if (req.mode === 'satellite') this.startSatellite(req.config);
     else this.startAdsb(req.config);
     this.dongle = { ...this.dongle, state: 'in-use', message: null };
     this.emitStatus();
@@ -153,7 +165,20 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
     this.active = null;
     await a.proc.stop();
     this.db.endScan(a.scanId);
+    if (a.mode === 'satellite') this.finishSatellite(a, 'cancelled');
     if (this.dongle.state === 'in-use') this.dongle = { ...this.dongle, state: 'connected' };
+  }
+
+  /** Marks the capture finished and collects the decoded images (SatDump writes them at the end). */
+  private finishSatellite(a: Active, statusIfNoImages: 'cancelled' | 'failed'): void {
+    const cfg = a.config as SatelliteConfig;
+    const cap = this.db.getSatCapture(cfg.captureId);
+    if (!cap) return;
+    const images = listImages(cap.dir);
+    const status = images.length ? 'done' : statusIfNoImages;
+    const log = a.satLog.slice(-40).join('\n');
+    const updated = this.db.updateSatCapture(cap.id, { status, images, log });
+    if (updated) this.emit('message', { type: 'satellite:capture', capture: updated });
   }
 
   /** Called when a child exits by itself (error, USB unplugged, ...). */
@@ -162,6 +187,12 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
     this.active = null;
     this.db.endScan(a.scanId);
     if (this.dongle.state === 'in-use') this.dongle = { ...this.dongle, state: 'connected' };
+    if (a.mode === 'satellite') {
+      // satdump exits by itself when the timeout ends: that's the normal end of a capture.
+      this.finishSatellite(a, code === 0 ? 'failed' : 'failed');
+      this.emitStatus();
+      return;
+    }
     if (!this.lastError) this.fail('exit', `${a.proc.bin} ha acabat inesperadament (codi ${code ?? signal ?? '?'}).`);
     else this.emitStatus();
   }
@@ -181,7 +212,7 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
   private newActive(mode: Active['mode'], config: Active['config'], proc: SdrProcess, scanId: number): Active {
     return {
       mode, proc, scanId, startedAt: Date.now(), config,
-      counters: { sweeps: 0, signals: 0, devices: 0, planes: 0 }, seenKeys: new Set(), signals: [],
+      counters: { sweeps: 0, signals: 0, devices: 0, planes: 0 }, seenKeys: new Set(), signals: [], satLog: [],
     };
   }
 
@@ -284,6 +315,32 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
     });
     ref.a = this.newActive('hunt', config, proc, scanId);
     this.active = ref.a;
+  }
+
+  // ---------- satellite ----------
+
+  private startSatellite(config: SatelliteConfig): void {
+    const cap = this.db.getSatCapture(config.captureId);
+    if (!cap) throw new Error('Captura no trobada');
+    const scanId = this.db.createScan('satellite', config);
+    const ref: { a: Active | null } = { a: null };
+    const base = this.baseHandlers(() => ref.a!);
+    const proc = new SdrProcess(this.satdumpBin ?? 'satdump', satdumpArgs(config, cap.dir), {
+      ...base,
+      onStderr: (l) => {
+        base.onStderr(l);
+        const a = ref.a;
+        if (a) { a.satLog.push(l.replace(/\x1b\[[0-9;]*m/g, '')); if (a.satLog.length > 200) a.satLog.shift(); }
+      },
+      onLine: (l) => {
+        const a = ref.a;
+        if (a) { a.satLog.push(l.replace(/\x1b\[[0-9;]*m/g, '')); if (a.satLog.length > 200) a.satLog.shift(); }
+      },
+    });
+    ref.a = this.newActive('satellite', config, proc, scanId);
+    this.active = ref.a;
+    const running = this.db.updateSatCapture(cap.id, { status: 'running' });
+    if (running) this.emit('message', { type: 'satellite:capture', capture: running });
   }
 
   // ---------- shutdown ----------

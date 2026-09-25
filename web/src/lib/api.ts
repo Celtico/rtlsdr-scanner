@@ -1,4 +1,4 @@
-import type { Band, Device, ModeConfig, Plane, Reading, Scan, Signal, Status, Sweep } from '@shared/types';
+import type { Band, Device, ModeConfig, Plane, Reading, SatCapture, SatInfo, SatPass, Scan, Signal, Status, Sweep } from '@shared/types';
 import type { AuditVerdict } from '@shared/sdr/audit';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -33,6 +33,12 @@ export const api = {
   patchDevice: (id: number, patch: DevicePatch) => request<Device>(`/api/devices/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   setAlias: (id: number, alias: string | null) => request<Device>(`/api/devices/${id}`, { method: 'PATCH', body: JSON.stringify({ alias }) }),
   audit: () => request<AuditEntry[]>('/api/audit'),
+  satInfo: () => request<{ satellites: SatInfo[]; satdump: boolean; dir: string }>('/api/satellite/info'),
+  satPasses: (lat: number, lon: number, hours = 24) => request<{ tleFetchedAt: number; passes: (SatPass & { captureId: number | null })[] }>(`/api/satellite/passes?lat=${lat}&lon=${lon}&hours=${hours}`),
+  satCaptures: () => request<SatCapture[]>('/api/satellite/captures'),
+  satSchedule: (b: { satellite: string; aos?: number; los?: number; maxElevationDeg?: number; gainDb?: number; now?: boolean }) => request<SatCapture>('/api/satellite/captures', { method: 'POST', body: JSON.stringify(b) }),
+  satCancel: (id: number) => request<SatCapture | { ok: true }>(`/api/satellite/captures/${id}`, { method: 'DELETE' }),
+  satImageUrl: (id: number, rel: string) => `/api/satellite/files/${id}/${rel.split('/').map(encodeURIComponent).join('/')}`,
   planes: (scanId?: number) => request<Plane[]>(`/api/planes${scanId ? `?scanId=${scanId}` : ''}`),
   scans: () => request<Scan[]>('/api/scans'),
   deleteScan: (id: number) => request<{ ok: true }>(`/api/scans/${id}`, { method: 'DELETE' }),

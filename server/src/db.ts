@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { Device, Plane, Reading, Scan, ScanKind, Signal, Sweep } from './types.js';
+import type { Device, Plane, Reading, SatCapture, SatCaptureStatus, Scan, ScanKind, Signal, Sweep } from './types.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS scans (
@@ -73,6 +73,21 @@ CREATE TABLE IF NOT EXISTS planes (
   heading_deg REAL,
   vertical_rate_fpm INTEGER,
   scan_id INTEGER
+);
+CREATE TABLE IF NOT EXISTS sat_captures (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  satellite TEXT NOT NULL,
+  aos INTEGER NOT NULL,
+  los INTEGER NOT NULL,
+  max_elevation_deg REAL NOT NULL,
+  freq_hz INTEGER NOT NULL,
+  pipeline TEXT NOT NULL,
+  gain_db REAL NOT NULL,
+  status TEXT NOT NULL,
+  dir TEXT NOT NULL,
+  images TEXT NOT NULL DEFAULT '[]',
+  log TEXT,
+  created_at INTEGER NOT NULL
 );
 `;
 
@@ -147,6 +162,18 @@ function deviceFromRow(r: DeviceRow & { rssi_var?: number | null }): Device {
     likelyOwn: r.owner === 'own' ? true : r.owner === 'other' ? false : isLikelyOwn(r.count, r.rssi_avg, rssiStd),
     owner: r.owner ?? null, bearingDeg: r.bearing_deg ?? null,
     lastData: JSON.parse(r.last_data), alias: r.alias,
+  };
+}
+
+interface SatCaptureRow {
+  id: number; satellite: string; aos: number; los: number; max_elevation_deg: number; freq_hz: number; pipeline: string;
+  gain_db: number; status: SatCaptureStatus; dir: string; images: string; log: string | null; created_at: number;
+}
+
+function satCaptureFromRow(r: SatCaptureRow): SatCapture {
+  return {
+    id: r.id, satellite: r.satellite, aos: r.aos, los: r.los, maxElevationDeg: r.max_elevation_deg, freqHz: r.freq_hz,
+    pipeline: r.pipeline, gainDb: r.gain_db, status: r.status, dir: r.dir, images: JSON.parse(r.images), log: r.log, createdAt: r.created_at,
   };
 }
 
@@ -350,6 +377,39 @@ export class Db {
   countPlanes(scanId?: number): number {
     if (scanId === undefined) return (this.db.prepare('SELECT COUNT(*) AS n FROM planes').get() as { n: number }).n;
     return (this.db.prepare('SELECT COUNT(*) AS n FROM planes WHERE scan_id = ?').get(scanId) as { n: number }).n;
+  }
+
+  // ---- satellite captures ----
+  createSatCapture(c: Omit<SatCapture, 'id' | 'images' | 'log' | 'createdAt' | 'status'> & { status?: SatCaptureStatus }): SatCapture {
+    const r = this.db.prepare(`INSERT INTO sat_captures (satellite, aos, los, max_elevation_deg, freq_hz, pipeline, gain_db, status, dir, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(c.satellite, c.aos, c.los, c.maxElevationDeg, c.freqHz, c.pipeline, c.gainDb, c.status ?? 'scheduled', c.dir, Date.now());
+    return this.getSatCapture(Number(r.lastInsertRowid))!;
+  }
+
+  getSatCapture(id: number): SatCapture | null {
+    const r = this.db.prepare('SELECT * FROM sat_captures WHERE id = ?').get(id) as SatCaptureRow | undefined;
+    return r ? satCaptureFromRow(r) : null;
+  }
+
+  listSatCaptures(): SatCapture[] {
+    return (this.db.prepare('SELECT * FROM sat_captures ORDER BY aos DESC').all() as SatCaptureRow[]).map(satCaptureFromRow);
+  }
+
+  updateSatCapture(id: number, patch: { status?: SatCaptureStatus; images?: string[]; log?: string | null }): SatCapture | null {
+    if (patch.status !== undefined) this.db.prepare('UPDATE sat_captures SET status = ? WHERE id = ?').run(patch.status, id);
+    if (patch.images !== undefined) this.db.prepare('UPDATE sat_captures SET images = ? WHERE id = ?').run(JSON.stringify(patch.images), id);
+    if (patch.log !== undefined) this.db.prepare('UPDATE sat_captures SET log = ? WHERE id = ?').run(patch.log, id);
+    return this.getSatCapture(id);
+  }
+
+  deleteSatCapture(id: number): void {
+    this.db.prepare('DELETE FROM sat_captures WHERE id = ?').run(id);
+  }
+
+  /** Captures left "running" by a crash become failed. */
+  failRunningSatCaptures(): void {
+    this.db.prepare("UPDATE sat_captures SET status = 'failed', log = COALESCE(log, '') || '\nInterromput (el servidor s’ha reiniciat)' WHERE status = 'running'").run();
   }
 
   /** Total scanning time in ms across all scans. */

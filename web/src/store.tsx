@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { Band, Device, ModeConfig, Plane, Signal, Status, Sweep, WsMessage } from '@shared/types';
+import type { Band, Device, ModeConfig, Plane, SatCapture, Signal, Status, Sweep, WsMessage } from '@shared/types';
 import { api } from '@/lib/api';
 import { useSdrSocket } from '@/hooks/useSdrSocket';
 import { toaster } from '@/components/ui/toaster';
@@ -21,6 +21,7 @@ export interface SdrStore {
   signalsScanId: number | null;
   devices: Device[];
   planes: Plane[];
+  satCaptures: SatCapture[];
   busy: boolean;
   setMode: (mc: ModeConfig) => Promise<boolean>;
   stop: () => Promise<boolean>;
@@ -40,6 +41,7 @@ export function SdrProvider({ children }: { children: ReactNode }) {
   const [signalsScanId, setSignalsScanId] = useState<number | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [planes, setPlanes] = useState<Plane[]>([]);
+  const [satCaptures, setSatCaptures] = useState<SatCapture[]>([]);
   const [busy, setBusy] = useState(false);
   const lastErrorAt = useRef(0);
   const trailsRef = useRef(new Map<string, TrailPoint[]>());
@@ -84,6 +86,16 @@ export function SdrProvider({ children }: { children: ReactNode }) {
         break;
       case 'hunt:level':
         pushHuntLevel(m.level, m.maxDbfs, m.maxAt);
+        break;
+      case 'satellite:capture':
+        setSatCaptures((prev) => {
+          const i = prev.findIndex((c) => c.id === m.capture.id);
+          if (i === -1) return [m.capture, ...prev].sort((a, b) => b.aos - a.aos);
+          const next = [...prev];
+          next[i] = m.capture;
+          return next;
+        });
+        if (m.capture.status === 'done') toaster.create({ title: `Captura de ${m.capture.satellite} acabada`, description: `${m.capture.images.length} imatges`, type: 'success', duration: 6000 });
         break;
       case 'adsb:plane':
         if (m.plane.lat != null && m.plane.lon != null) {
@@ -134,7 +146,7 @@ export function SdrProvider({ children }: { children: ReactNode }) {
         const [st, b] = await Promise.all([api.status(), api.bands()]);
         setStatus(st);
         setBands(b);
-        await Promise.all([refreshDevices(), refreshPlanes()]);
+        await Promise.all([refreshDevices(), refreshPlanes(), api.satCaptures().then(setSatCaptures)]);
         const sg = await api.signals();
         setSignals(sg.signals);
         setSignalsScanId(sg.scanId);
@@ -171,9 +183,9 @@ export function SdrProvider({ children }: { children: ReactNode }) {
   const stop = useCallback(() => setMode({ mode: 'idle' }), [setMode]);
 
   const value = useMemo<SdrStore>(() => ({
-    connected, status, bands, sweeps, signals, signalsScanId, devices, planes, busy, trails: trailsRef.current,
+    connected, status, bands, sweeps, signals, signalsScanId, devices, planes, satCaptures, busy, trails: trailsRef.current,
     setMode, stop, refreshDevices, refreshPlanes, updateDevice: upsertDevice, loadScanSweeps,
-  }), [connected, status, bands, sweeps, signals, signalsScanId, devices, planes, busy, setMode, stop, refreshDevices, refreshPlanes, upsertDevice, loadScanSweeps]);
+  }), [connected, status, bands, sweeps, signals, signalsScanId, devices, planes, satCaptures, busy, setMode, stop, refreshDevices, refreshPlanes, upsertDevice, loadScanSweeps]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
