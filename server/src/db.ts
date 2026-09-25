@@ -76,6 +76,13 @@ CREATE TABLE IF NOT EXISTS planes (
 );
 `;
 
+/** Columns added after the first release; applied idempotently at startup. */
+const MIGRATIONS: [table: string, column: string, ddl: string][] = [
+  ['devices', 'owner', 'ALTER TABLE devices ADD COLUMN owner TEXT'],
+  ['devices', 'bearing_deg', 'ALTER TABLE devices ADD COLUMN bearing_deg REAL'],
+  ['planes', 'country', 'ALTER TABLE planes ADD COLUMN country TEXT'],
+];
+
 interface ScanRow {
   id: number;
   kind: ScanKind;
@@ -95,12 +102,13 @@ interface SignalRow {
 interface DeviceRow {
   id: number; key: string; model: string; device_id: string | null; channel: string | null; freq_hz: number | null;
   first_seen: number; last_seen: number; count: number; rssi: number | null; snr: number | null; last_data: string;
-  alias: string | null; rssi_avg: number | null; rssi_std: number | null;
+  alias: string | null; rssi_avg: number | null; rssi_std: number | null; owner: 'own' | 'other' | null; bearing_deg: number | null;
 }
 interface ReadingRow { id: number; device_id: number; ts: number; rssi: number | null; snr: number | null; data: string }
 interface PlaneRow {
   icao: string; callsign: string | null; first_seen: number; last_seen: number; msgs: number; altitude_ft: number | null;
   lat: number | null; lon: number | null; speed_kt: number | null; heading_deg: number | null; vertical_rate_fpm: number | null;
+  country: string | null;
 }
 
 const SCAN_SELECT = `
@@ -135,7 +143,9 @@ function deviceFromRow(r: DeviceRow & { rssi_var?: number | null }): Device {
   return {
     id: r.id, key: r.key, model: r.model, deviceId: r.device_id, channel: r.channel, freqHz: r.freq_hz,
     firstSeen: r.first_seen, lastSeen: r.last_seen, count: r.count, rssi: r.rssi, snr: r.snr,
-    rssiAvg: r.rssi_avg, rssiStd, likelyOwn: isLikelyOwn(r.count, r.rssi_avg, rssiStd),
+    rssiAvg: r.rssi_avg, rssiStd,
+    likelyOwn: r.owner === 'own' ? true : r.owner === 'other' ? false : isLikelyOwn(r.count, r.rssi_avg, rssiStd),
+    owner: r.owner ?? null, bearingDeg: r.bearing_deg ?? null,
     lastData: JSON.parse(r.last_data), alias: r.alias,
   };
 }
@@ -144,7 +154,7 @@ function planeFromRow(r: PlaneRow): Plane {
   return {
     icao: r.icao, callsign: r.callsign, firstSeen: r.first_seen, lastSeen: r.last_seen, msgs: r.msgs,
     altitudeFt: r.altitude_ft, lat: r.lat, lon: r.lon, speedKt: r.speed_kt, headingDeg: r.heading_deg,
-    verticalRateFpm: r.vertical_rate_fpm,
+    verticalRateFpm: r.vertical_rate_fpm, country: r.country ?? null,
   };
 }
 
@@ -157,6 +167,10 @@ export class Db {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this.db.exec(SCHEMA);
+    for (const [table, column, ddl] of MIGRATIONS) {
+      const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+      if (!cols.some((c) => c.name === column)) this.db.exec(ddl);
+    }
   }
 
   close(): void {
@@ -274,6 +288,30 @@ export class Db {
     return this.getDevice(id);
   }
 
+  updateDeviceMeta(id: number, patch: { alias?: string | null; owner?: 'own' | 'other' | null; bearingDeg?: number | null }): Device | null {
+    if (patch.alias !== undefined) this.db.prepare('UPDATE devices SET alias = ? WHERE id = ?').run(patch.alias, id);
+    if (patch.owner !== undefined) this.db.prepare('UPDATE devices SET owner = ? WHERE id = ?').run(patch.owner, id);
+    if (patch.bearingDeg !== undefined) this.db.prepare('UPDATE devices SET bearing_deg = ? WHERE id = ?').run(patch.bearingDeg, id);
+    return this.getDevice(id);
+  }
+
+  /** Readings per hour of day (local time) for each device: [deviceId → 24 counts]. */
+  deviceActivityByHour(): Record<number, number[]> {
+    const rows = this.db.prepare('SELECT device_id, ts FROM readings').all() as { device_id: number; ts: number }[];
+    const out: Record<number, number[]> = {};
+    for (const r of rows) {
+      const arr = (out[r.device_id] ??= new Array<number>(24).fill(0));
+      arr[new Date(r.ts).getHours()]! += 1;
+    }
+    return out;
+  }
+
+  /** Days with at least one reading per device, to judge whether a routine is statistically meaningful. */
+  deviceActiveDays(): Record<number, number> {
+    const rows = this.db.prepare("SELECT device_id, COUNT(DISTINCT date(ts / 1000, 'unixepoch', 'localtime')) AS days FROM readings GROUP BY device_id").all() as { device_id: number; days: number }[];
+    return Object.fromEntries(rows.map((r) => [r.device_id, r.days]));
+  }
+
   deviceHistory(id: number, limit = 500): Reading[] {
     const rows = this.db.prepare('SELECT * FROM readings WHERE device_id = ? ORDER BY ts DESC LIMIT ?').all(id, limit) as ReadingRow[];
     return rows.reverse().map((r) => ({ id: r.id, deviceId: r.device_id, ts: r.ts, rssi: r.rssi, snr: r.snr, data: JSON.parse(r.data) }));
@@ -286,10 +324,11 @@ export class Db {
 
   // ---- planes ----
   upsertPlane(p: Plane, scanId: number | null): void {
-    this.db.prepare(`INSERT INTO planes (icao, callsign, first_seen, last_seen, msgs, altitude_ft, lat, lon, speed_kt, heading_deg, vertical_rate_fpm, scan_id)
-      VALUES (@icao, @callsign, @firstSeen, @lastSeen, @msgs, @altitudeFt, @lat, @lon, @speedKt, @headingDeg, @verticalRateFpm, @scanId)
+    this.db.prepare(`INSERT INTO planes (icao, callsign, first_seen, last_seen, msgs, altitude_ft, lat, lon, speed_kt, heading_deg, vertical_rate_fpm, scan_id, country)
+      VALUES (@icao, @callsign, @firstSeen, @lastSeen, @msgs, @altitudeFt, @lat, @lon, @speedKt, @headingDeg, @verticalRateFpm, @scanId, @country)
       ON CONFLICT(icao) DO UPDATE SET
         callsign = COALESCE(excluded.callsign, planes.callsign),
+        country = COALESCE(excluded.country, planes.country),
         last_seen = excluded.last_seen,
         msgs = planes.msgs + excluded.msgs,
         altitude_ft = COALESCE(excluded.altitude_ft, planes.altitude_ft),

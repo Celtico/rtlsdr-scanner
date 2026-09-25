@@ -1,6 +1,6 @@
 // Shared types between server and web. Frequencies are always integer Hz.
 
-export type Mode = 'idle' | 'survey' | 'devices' | 'adsb';
+export type Mode = 'idle' | 'survey' | 'devices' | 'adsb' | 'hunt';
 
 export type DongleState = 'unknown' | 'connected' | 'in-use' | 'busy' | 'missing' | 'error';
 
@@ -32,21 +32,30 @@ export interface AdsbConfig {
   gainDb: number | null;
 }
 
+/** Hunt mode: fixed frequency, live RSSI several times per second (rtl_sdr raw IQ power). */
+export interface HuntConfig {
+  freqHz: number;
+  gainDb: number;
+  /** Sample rate = listening bandwidth. 250 kHz suits LoRa/ISM bursts. */
+  sampleRate: number;
+}
+
 export type ModeConfig =
   | { mode: 'idle' }
   | { mode: 'survey'; config: SurveyConfig }
   | { mode: 'devices'; config: DevicesConfig }
-  | { mode: 'adsb'; config: AdsbConfig };
+  | { mode: 'adsb'; config: AdsbConfig }
+  | { mode: 'hunt'; config: HuntConfig };
 
 export interface Status {
   mode: Mode;
   dongle: DongleInfo;
   scanId: number | null;
   startedAt: number | null;
-  config: SurveyConfig | DevicesConfig | AdsbConfig | null;
+  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig | null;
   lastError: { code: SdrErrorCode; message: string; at: number } | null;
   counters: { sweeps: number; signals: number; devices: number; planes: number };
-  tools: Record<'rtl_test' | 'rtl_power' | 'rtl_433' | 'rtl_adsb', boolean>;
+  tools: Record<'rtl_test' | 'rtl_power' | 'rtl_433' | 'rtl_adsb' | 'rtl_sdr', boolean>;
 }
 
 export interface Band {
@@ -98,8 +107,12 @@ export interface Device {
   snr: number | null;
   rssiAvg: number | null;
   rssiStd: number | null;
-  /** Heuristic: strong and stable RSSI => probably the user's own device. */
+  /** Heuristic: strong and stable RSSI => probably the user's own device (overridden by `owner`). */
   likelyOwn: boolean;
+  /** Manual override of the ownership heuristic. */
+  owner: 'own' | 'other' | null;
+  /** Manual bearing (degrees from north) found with a directional antenna; null = unknown direction. */
+  bearingDeg: number | null;
   lastData: Record<string, unknown>;
   alias: string | null;
 }
@@ -125,16 +138,27 @@ export interface Plane {
   speedKt: number | null;
   headingDeg: number | null;
   verticalRateFpm: number | null;
+  /** Country of registration from the ICAO 24-bit address block. */
+  country: string | null;
 }
 
-export type ScanKind = 'survey' | 'devices' | 'adsb';
+/** One live RSSI sample from hunt mode. */
+export interface HuntLevel {
+  ts: number;
+  /** Mean power of the block in dBFS (0 = full scale). */
+  dbfs: number;
+  /** Highest 10 ms sub-block power in dBFS, catches short bursts. */
+  peakDbfs: number;
+}
+
+export type ScanKind = 'survey' | 'devices' | 'adsb' | 'hunt';
 
 export interface Scan {
   id: number;
   kind: ScanKind;
   startedAt: number;
   endedAt: number | null;
-  config: SurveyConfig | DevicesConfig | AdsbConfig;
+  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig;
   sweeps: number;
   signals: number;
   devices: number;
@@ -148,6 +172,7 @@ export type WsMessage =
   | { type: 'device:new'; device: Device }
   | { type: 'device:update'; device: Device }
   | { type: 'adsb:plane'; plane: Plane }
+  | { type: 'hunt:level'; level: HuntLevel; maxDbfs: number; maxAt: number | null }
   | { type: 'error'; code: SdrErrorCode; message: string }
   | { type: 'log'; line: string };
 
@@ -168,3 +193,8 @@ export const DEFAULT_DEVICES: DevicesConfig = {
 };
 
 export const DEFAULT_ADSB: AdsbConfig = { gainDb: null };
+
+export const DEFAULT_HUNT: HuntConfig = { freqHz: 868_100_000, gainDb: 29.7, sampleRate: 250_000 };
+
+/** Home position for the radar view (Lleida). */
+export const DEFAULT_HOME = { lat: 41.62, lon: 0.62 };

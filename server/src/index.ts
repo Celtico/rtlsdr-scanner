@@ -9,9 +9,10 @@ import { SdrManager } from './sdr/manager.js';
 import { BANDS } from './sdr/bands.js';
 import { killAllSync } from './sdr/process.js';
 import { toCsv } from './export.js';
+import { classifyDevice, routineHours } from './sdr/audit.js';
 import {
-  DEFAULT_ADSB, DEFAULT_DEVICES, DEFAULT_SURVEY,
-  type AdsbConfig, type DevicesConfig, type ModeConfig, type SurveyConfig, type WsMessage,
+  DEFAULT_ADSB, DEFAULT_DEVICES, DEFAULT_HUNT, DEFAULT_SURVEY,
+  type AdsbConfig, type DevicesConfig, type HuntConfig, type ModeConfig, type SurveyConfig, type WsMessage,
 } from './types.js';
 
 const PORT = Number(process.env.PORT ?? 4000);
@@ -79,6 +80,14 @@ function parseModeBody(body: unknown): ModeConfig {
       const config: AdsbConfig = { gainDb: cfg.gainDb == null ? DEFAULT_ADSB.gainDb : num(cfg.gainDb, 0) };
       return { mode: 'adsb', config };
     }
+    case 'hunt': {
+      const config: HuntConfig = {
+        freqHz: Math.round(num(cfg.freqHz, DEFAULT_HUNT.freqHz)),
+        gainDb: num(cfg.gainDb, DEFAULT_HUNT.gainDb),
+        sampleRate: Math.round(num(cfg.sampleRate, DEFAULT_HUNT.sampleRate)),
+      };
+      return { mode: 'hunt', config };
+    }
     default:
       throw Object.assign(new Error('mode ha de ser idle | survey | devices | adsb'), { statusCode: 400 });
   }
@@ -120,13 +129,37 @@ app.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/api/devic
   return { device, readings: db.deviceHistory(id, num(req.query.limit, 500)) };
 });
 
-app.patch<{ Params: { id: string }; Body: { alias?: string | null } }>('/api/devices/:id', async (req, reply) => {
+app.patch<{ Params: { id: string }; Body: { alias?: string | null; owner?: 'own' | 'other' | null; bearingDeg?: number | null } }>('/api/devices/:id', async (req, reply) => {
   const id = Number(req.params.id);
-  const alias = typeof req.body?.alias === 'string' ? req.body.alias.trim() || null : null;
-  const device = db.setDeviceAlias(id, alias);
+  const b = req.body ?? {};
+  const patch: Parameters<Db['updateDeviceMeta']>[1] = {};
+  if ('alias' in b) patch.alias = typeof b.alias === 'string' ? b.alias.trim() || null : null;
+  if ('owner' in b) patch.owner = b.owner === 'own' || b.owner === 'other' ? b.owner : null;
+  if ('bearingDeg' in b) {
+    const v = b.bearingDeg == null ? null : num(b.bearingDeg, NaN);
+    patch.bearingDeg = v === null ? null : Number.isFinite(v) ? ((v % 360) + 360) % 360 : null;
+  }
+  const device = db.updateDeviceMeta(id, patch);
   if (!device) return reply.code(404).send({ error: 'Dispositiu no trobat' });
   broadcast({ type: 'device:update', device });
   return device;
+});
+
+/** Home exposure audit: only the user's own devices, only metadata (never third parties' content). */
+app.get('/api/audit', async () => {
+  const own = db.listDevices().filter((d) => d.likelyOwn);
+  const byHour = db.deviceActivityByHour();
+  const days = db.deviceActiveDays();
+  return own.map((d) => {
+    const hours = byHour[d.id] ?? new Array<number>(24).fill(0);
+    return {
+      device: d,
+      verdict: classifyDevice(d.model, d.deviceId, d.lastData),
+      activityByHour: hours,
+      routineHours: routineHours(hours),
+      activeDays: days[d.id] ?? 0,
+    };
+  });
 });
 
 app.get<{ Querystring: { scanId?: string } }>('/api/planes', async (req) => {

@@ -3,23 +3,24 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { Db } from '../db.js';
 import type {
-  AdsbConfig, DevicesConfig, DongleInfo, Mode, ModeConfig, SdrErrorCode, Signal, Status, SurveyConfig, WsMessage,
+  AdsbConfig, DevicesConfig, DongleInfo, HuntConfig, Mode, ModeConfig, SdrErrorCode, Signal, Status, SurveyConfig, WsMessage,
 } from '../types.js';
 import { SdrProcess, stopAll, type SdrError } from './process.js';
 import { rtlPowerArgs, SignalTracker, SweepAssembler, validateSurveyConfig } from './survey.js';
 import { parseRtl433Line, rtl433Args, validateDevicesConfig } from './devices.js';
 import { parseAdsbLine, PlaneTracker, rtlAdsbArgs, toPlane } from './adsb.js';
+import { LevelMeter, rtlSdrArgs, validateHuntConfig } from './hunt.js';
 
 const execFileP = promisify(execFile);
 
-type Tool = 'rtl_test' | 'rtl_power' | 'rtl_433' | 'rtl_adsb';
+type Tool = 'rtl_test' | 'rtl_power' | 'rtl_433' | 'rtl_adsb' | 'rtl_sdr';
 
 interface Active {
   mode: Exclude<Mode, 'idle'>;
   proc: SdrProcess;
   scanId: number;
   startedAt: number;
-  config: SurveyConfig | DevicesConfig | AdsbConfig;
+  config: SurveyConfig | DevicesConfig | AdsbConfig | HuntConfig;
   counters: { sweeps: number; signals: number; devices: number; planes: number };
   /** Devices seen in this scan (keys), for the counter. */
   seenKeys: Set<string>;
@@ -35,7 +36,7 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
   private queue: Promise<void> = Promise.resolve();
   private dongle: DongleInfo = { state: 'unknown', name: null, tuner: null, message: null, checkedAt: null };
   private lastError: Status['lastError'] = null;
-  private tools: Record<Tool, boolean> = { rtl_test: false, rtl_power: false, rtl_433: false, rtl_adsb: false };
+  private tools: Record<Tool, boolean> = { rtl_test: false, rtl_power: false, rtl_433: false, rtl_adsb: false, rtl_sdr: false };
 
   constructor(private readonly db: Db) {
     super();
@@ -126,9 +127,10 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
   private async switchTo(req: ModeConfig): Promise<void> {
     if (req.mode !== 'idle') {
       const err = req.mode === 'survey' ? validateSurveyConfig(req.config)
-        : req.mode === 'devices' ? validateDevicesConfig(req.config) : null;
+        : req.mode === 'devices' ? validateDevicesConfig(req.config)
+        : req.mode === 'hunt' ? validateHuntConfig(req.config) : null;
       if (err) throw new Error(err);
-      const tool: Tool = req.mode === 'survey' ? 'rtl_power' : req.mode === 'devices' ? 'rtl_433' : 'rtl_adsb';
+      const tool: Tool = req.mode === 'survey' ? 'rtl_power' : req.mode === 'devices' ? 'rtl_433' : req.mode === 'hunt' ? 'rtl_sdr' : 'rtl_adsb';
       if (!this.tools[tool]) throw new Error(`No trobo "${tool}". Instal·la'l amb brew install librtlsdr rtl_433.`);
     }
     await this.stopActive();
@@ -139,6 +141,7 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
     this.lastError = null;
     if (req.mode === 'survey') this.startSurvey(req.config);
     else if (req.mode === 'devices') this.startDevices(req.config);
+    else if (req.mode === 'hunt') this.startHunt(req.config);
     else this.startAdsb(req.config);
     this.dongle = { ...this.dongle, state: 'in-use', message: null };
     this.emitStatus();
@@ -259,6 +262,27 @@ export class SdrManager extends EventEmitter<{ message: [WsMessage] }> {
       },
     });
     ref.a = this.newActive('adsb', config, proc, scanId);
+    this.active = ref.a;
+  }
+
+  // ---------- hunt ----------
+
+  private startHunt(config: HuntConfig): void {
+    const scanId = this.db.createScan('hunt', config);
+    const meter = new LevelMeter(config.sampleRate);
+    const ref: { a: Active | null } = { a: null };
+    const proc = new SdrProcess('rtl_sdr', rtlSdrArgs(config), {
+      ...this.baseHandlers(() => ref.a!),
+      binary: true,
+      onData: (chunk) => {
+        const active = ref.a;
+        if (!active || this.active !== active) return;
+        for (const level of meter.push(chunk)) {
+          this.emit('message', { type: 'hunt:level', level, maxDbfs: meter.maxDbfs, maxAt: meter.maxAt });
+        }
+      },
+    });
+    ref.a = this.newActive('hunt', config, proc, scanId);
     this.active = ref.a;
   }
 

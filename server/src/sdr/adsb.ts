@@ -1,4 +1,5 @@
 import type { AdsbConfig, Plane } from '../types.js';
+import { icaoCountry } from './icao.js';
 
 // ---------- Mode S / ADS-B (DF17) decoding of rtl_adsb output ----------
 
@@ -140,7 +141,7 @@ export class PlaneTracker {
     const isNew = !this.planes.has(icao);
     const p: PlaneState = this.planes.get(icao) ?? {
       icao, callsign: null, firstSeen: ts, lastSeen: ts, msgs: 0, altitudeFt: null, lat: null, lon: null,
-      speedKt: null, headingDeg: null, verticalRateFpm: null, cprEven: null, cprOdd: null,
+      speedKt: null, headingDeg: null, verticalRateFpm: null, country: icaoCountry(icao), cprEven: null, cprOdd: null,
     };
     p.msgs += 1;
     p.lastSeen = ts;
@@ -175,7 +176,7 @@ export function toPlane(p: PlaneState): Plane {
   return {
     icao: p.icao, callsign: p.callsign, firstSeen: p.firstSeen, lastSeen: p.lastSeen, msgs: p.msgs,
     altitudeFt: p.altitudeFt, lat: p.lat, lon: p.lon, speedKt: p.speedKt, headingDeg: p.headingDeg,
-    verticalRateFpm: p.verticalRateFpm,
+    verticalRateFpm: p.verticalRateFpm, country: p.country,
   };
 }
 

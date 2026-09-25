@@ -6,6 +6,9 @@ export interface SdrError { code: SdrErrorCode; message: string }
 
 export interface RunOptions {
   onLine?: (line: string) => void;
+  /** Raw stdout chunks (for binary streams such as rtl_sdr IQ). Set `binary` to skip line splitting. */
+  onData?: (chunk: Uint8Array) => void;
+  binary?: boolean;
   onStderr?: (line: string) => void;
   onError?: (err: SdrError) => void;
   onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
@@ -60,7 +63,9 @@ export class SdrProcess {
       }
     });
 
-    if (this.child.stdout && opts.onLine) {
+    if (this.child.stdout && opts.binary && opts.onData) {
+      this.child.stdout.on('data', (chunk: Buffer) => opts.onData!(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength)));
+    } else if (this.child.stdout && opts.onLine) {
       readline.createInterface({ input: this.child.stdout }).on('line', opts.onLine);
     }
     if (this.child.stderr) {
