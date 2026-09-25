@@ -13,6 +13,7 @@ import { classifyDevice, routineHours } from './sdr/audit.js';
 import { loadTles, predictAll, satInfo, SATELLITES } from './sdr/satellite.js';
 import { analyzeEmi, compareReports, floorTrend, medianSpectrum, type EmiReport } from './sdr/emi.js';
 import { removeEntry, upsertEntry, type Calibration } from './sdr/calibration.js';
+import { icaoCountry } from './sdr/icao.js';
 import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
 import { normalize, sep } from 'node:path';
 import {
@@ -30,6 +31,7 @@ const TLE_PATH = resolve(ROOT, 'data', 'tle.json');
 const db = new Db(DB_PATH);
 db.closeDanglingScans();
 db.failRunningSatCaptures();
+db.backfillPlaneCountries(icaoCountry);
 const manager = new SdrManager(db);
 
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });

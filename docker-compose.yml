@@ -1,0 +1,48 @@
+# Decoders that run in Docker and reach the dongle through rtl_tcp on the Mac (Docker Desktop cannot use USB).
+#
+#   docker compose build                      # builds the rtlsdr-decoders image used by the app's DAB mode
+#   rtl_tcp -a 0.0.0.0 -p 1234                # on the Mac (or let the app start it: mode "dab")
+#   docker compose run --rm dab               # welle-cli web server on http://localhost:7979 (block 10C by default)
+#   DAB_CHANNEL=11B docker compose run --rm dab
+#   docker compose run --rm rtl433            # rtl_433 over rtl_tcp, JSON on stdout
+#   docker compose run --rm shell             # a shell inside the image
+#
+# The app itself (server + web) runs on the Mac because it owns the USB dongle: `pnpm dev`.
+services:
+  decoders:
+    build: ./docker/decoders
+    image: rtlsdr-decoders
+    profiles: ["build-only"]
+
+  dab:
+    image: rtlsdr-decoders
+    build: ./docker/decoders
+    container_name: sdr-dab
+    ports:
+      - "127.0.0.1:7979:7979"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: >
+      welle-cli -c ${DAB_CHANNEL:-10C} -w 7979
+      -F rtl_tcp,host.docker.internal:${RTL_TCP_PORT:-1234} -g -1 -T
+    profiles: ["dab"]
+
+  rtl433:
+    image: rtlsdr-decoders
+    build: ./docker/decoders
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: >
+      rtl_433 -d rtl_tcp://host.docker.internal:${RTL_TCP_PORT:-1234}
+      -f ${RTL433_FREQ:-433.92M} -F json -M level -M time:iso
+    profiles: ["rtl433"]
+
+  shell:
+    image: rtlsdr-decoders
+    build: ./docker/decoders
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint: ["/bin/bash"]
+    stdin_open: true
+    tty: true
+    profiles: ["shell"]

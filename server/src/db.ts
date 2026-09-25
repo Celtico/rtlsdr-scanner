@@ -381,6 +381,15 @@ export class Db {
     return rows.map(planeFromRow);
   }
 
+  /** Fills `country` for rows created before the column existed. */
+  backfillPlaneCountries(lookup: (icao: string) => string | null): number {
+    const rows = this.db.prepare('SELECT icao FROM planes WHERE country IS NULL').all() as { icao: string }[];
+    const upd = this.db.prepare('UPDATE planes SET country = ? WHERE icao = ?');
+    let n = 0;
+    for (const r of rows) { const c = lookup(r.icao); if (c) { upd.run(c, r.icao); n++; } }
+    return n;
+  }
+
   countPlanes(scanId?: number): number {
     if (scanId === undefined) return (this.db.prepare('SELECT COUNT(*) AS n FROM planes').get() as { n: number }).n;
     return (this.db.prepare('SELECT COUNT(*) AS n FROM planes WHERE scan_id = ?').get(scanId) as { n: number }).n;
