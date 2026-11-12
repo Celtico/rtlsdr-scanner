@@ -1,104 +1,115 @@
 # RTL-SDR Scanner
 
-Aplicació web local per descobrir quins senyals de ràdio hi ha a casa amb un **RTL-SDR Blog V3** i, quan es pot, quin dispositiu els emet i quines dades envia. Només recepció.
+**English** · [Català](README.ca.md)
 
-- **Espectre**: escombrats amb `rtl_power`, waterfall en temps real, detecció de pics sobre el soroll de fons i classificació per banda (ES/UE).
-- **Dispositius**: `rtl_433` saltant entre 433,92 i 868,3 MHz. Dedup per model+id+canal, històric de lectures, àlies, filtre «probablement meu / veïns».
-- **Avions**: ADS-B a 1090 MHz amb `rtl_adsb` (ICAO, país pel bloc ICAO, indicatiu, altitud, posició, velocitat, rumb).
-- **Radar** (pestanya dins d'Avions): vista en planta centrada a casa (Lleida per defecte, configurable). Avions per posició real amb estela; la resta de dispositius en anells per RSSI amb direcció desconeguda (o manual, si l'has trobada amb una antena directiva).
-- **Auditoria**: superfície d'exposició de ràdio de casa: què emet en clar, què és identificable per ID, rutines horàries i recomanacions. Només metadades dels dispositius propis.
-- **Hunt**: localitzar sensors LoRaWAN. Mode EU868: els 8 canals de ChirpStack (867,1–868,5 MHz) alhora en una sola finestra de 2,4 MHz centrada a 867,8 MHz (`rtl_sdr` IQ cru, canalitzador propi sense FFT), RSSI per canal 10×/s, llista de ràfegues amb canal i nivell, pic màxim, to sonor tipus detector de metalls amb «tic» a cada ràfega i volum, guany ajustable en calent. Mode alternatiu d'una sola freqüència (250 kHz).
-- **Satèl·lits**: passos de NOAA-15/19 (APT) i Meteor-M2 3/4 (LRPT) sobre casa amb TLE de Celestrak (SGP4 via `satellite.js`), programació de captures que llancen **SatDump** pel `manager` i galeria de les imatges descodificades a `data/satellite/`.
-- **Ràdio FM**: botó d'escolta als senyals de la banda FM (`rtl_fm` → PCM → Web Audio). Només radiodifusió: cap altra banda es reprodueix.
-- **DAB**: ràdio digital descodificada per `welle-cli` **dins de Docker**; el Mac només executa `rtl_tcp` (osmocom) i el contenidor s'hi connecta per xarxa. Llista de programes i àudio MP3 a través del servidor.
-- **Soroll (EMI)**: contaminació electromagnètica local a partir dels escombrats: perfil del soroll de fons per trams, pintes d'espuris (fonts commutades), trams de banda ampla (PLC, motors), portadores fixes, soroll per banda, evolució temporal i comparació abans/després amb una línia base per trobar l'aparell que embruta l'espectre. Són dB relatius sense calibrar: no mesura V/m ni límits de salut.
-- **Calibratge a dBm (nivell 2)**: a la secció Soroll, amb un senyal de nivell conegut (generador, font de soroll o un mesurador extern): l'app agafa la lectura de l'escombrat i desa l'offset per guany; els altres guanys es deriven. Sense referència, estimació amb valors típics del R820T (±6 dB). Commutador dB/dBm a Soroll i Espectre. El Hunt (IQ cru, dBFS) té el seu propi calibratge (escala `iq`, estimació ±10 dB sense referència): retén una lectura en viu i indica el nivell real; així els seus dBm es poden comparar amb els del gateway. No dona V/m ni exposició (nivell 3: caldria el factor d'antena).
-- **Històric**: tots els escaneigs es desen a SQLite i es poden tornar a obrir i exportar (CSV/JSON).
+A local web app to find out which radio signals are around you with an **RTL-SDR Blog V3** dongle and, when possible, which device sends them and what it says. Receive only.
 
-## Requisits
+It runs entirely on your machine: the server talks to the dongle, the browser shows the result, and everything you capture stays in a local SQLite file. Nothing is uploaded anywhere.
 
-- macOS amb Homebrew, Node 22+ i pnpm.
-- Eines SDR: `brew install librtlsdr rtl_433`.
-- Satèl·lits (opcional): `brew install satdump` (cask; deixa `SatDump.app` a `/Applications`). El servidor crida el binari del bundle directament, perquè pel symlink de Homebrew SatDump no troba la seva configuració. Si el tens en un altre lloc: `SATDUMP_BIN=/ruta/satdump`.
-- Descodificadors en Docker (opcional, per al DAB): Docker Desktop en marxa i la imatge construïda:
-  ```bash
-  docker build -t rtlsdr-decoders docker/decoders
-  ```
-  O bé `docker compose build`. El `docker-compose.yml` també té perfils per fer servir els descodificadors a mà: `docker compose run --rm dab` (welle-cli a http://localhost:7979, `DAB_CHANNEL=11B` per canviar de bloc), `docker compose run --rm rtl433` i `docker compose run --rm shell`; tots esperen `rtl_tcp` en marxa al Mac.
-  La imatge (Debian) porta `welle.io`, `rtl-sdr` (osmocom) i `rtl_433`.
-  Autotest del descodificador: `sh docker/decoders/selftest/run.sh` (descodifica una trama Nexus-TH sintètica dins del contenidor). Docker Desktop a macOS no pot accedir a l'USB: per això el dongle el gestiona `rtl_tcp` al Mac (port 1234) i el contenidor s'hi connecta a `host.docker.internal`. TDT (DVB-T) no és possible amb aquest dongle en mode SDR (cal 9 MS/s i arriba a 2,4).
-- Comprova el dongle: `rtl_test -t` ha de llistar `Realtek, RTL2838UHIDIR`.
+![Spectrum sweep with waterfall and detected signals](docs/screenshots/espectre.png)
 
-## Ordres
+> **Status:** a personal project that works on my setup (macOS, RTL-SDR Blog V3, stock antenna). The interface is in Catalan for now. Feedback on what is missing or wrong is very welcome: open an issue.
+
+## What it does
+
+- **Spectrum**: sweeps with `rtl_power`, live waterfall, peak detection over the noise floor and classification by band (Spain/EU allocations).
+- **Devices**: `rtl_433` hopping between 433.92 and 868.3 MHz. Deduplicated by model + id + channel, with reading history, aliases and a "probably mine / neighbours" filter based on signal strength.
+- **Aircraft**: ADS-B at 1090 MHz with `rtl_adsb` (ICAO address, country from the ICAO block, callsign, altitude, position, speed, heading).
+- **Radar**: a plan view centred on your home position. Aircraft are drawn at their real position with a trail; other devices sit on RSSI rings with unknown direction (or a manual bearing, if you found it with a directional antenna).
+- **Audit**: the radio exposure of your own home. What transmits in the clear, what can be identified by a fixed ID, daily routines, and recommendations. Metadata of your own devices only.
+- **Hunt**: find a lost LoRaWAN sensor. In EU868 mode it watches the 8 channels (867.1–868.5 MHz) at once in a single 2.4 MHz window (raw IQ from `rtl_sdr`, own channeliser), with per-channel RSSI 10 times a second, a burst list, and a metal-detector-style tone so you can walk around without looking at the screen.
+- **Satellites**: NOAA-15/19 (APT) and Meteor-M2 3/4 (LRPT) passes from Celestrak TLEs (SGP4), scheduled captures decoded by **SatDump**, and a gallery of the images.
+- **FM radio**: listen to broadcast FM stations found in the sweep (`rtl_fm` → PCM → Web Audio). Broadcast only: no other band is played.
+- **DAB**: digital radio decoded by `welle-cli` inside Docker, connected to `rtl_tcp` on the host.
+- **Noise (EMI)**: local interference from the sweeps: noise-floor profile, spur combs (switching power supplies), wideband stretches (PLC, motors), fixed carriers, and before/after comparison against a baseline to find the appliance that pollutes the spectrum. Relative dB, uncalibrated: it does not measure V/m or health limits.
+- **dBm calibration**: with a signal of known level, the app stores the offset per gain. Without one it estimates from typical R820T values (±6 dB).
+- **History**: every scan is saved to SQLite and can be reopened and exported (CSV/JSON).
+
+| Hunt (LoRaWAN EU868) | Satellites |
+| --- | --- |
+| ![Hunt](docs/screenshots/hunt.png) | ![Satellites](docs/screenshots/satellits.png) |
+
+| Noise (EMI) | History |
+| --- | --- |
+| ![Noise](docs/screenshots/soroll.png) | ![History](docs/screenshots/historic.png) |
+
+## What it does not do
+
+- It never transmits.
+- It does not decode or record private communications. Encrypted bands (mobile, TETRA) only show "activity detected".
+- LoRa/LoRaWAN payloads are not decoded; Hunt only measures power.
+- DVB-T television is not possible with this dongle in SDR mode (it needs 9 MS/s and the dongle reaches 2.4).
+
+## Requirements
+
+- macOS with Homebrew, Node 22+ and pnpm. Linux should work wherever the `rtl_*` tools do, but it is untested.
+- SDR tools: `brew install librtlsdr rtl_433`.
+- Satellites (optional): `brew install satdump` (cask; it leaves `SatDump.app` in `/Applications`). If yours lives elsewhere: `SATDUMP_BIN=/path/to/satdump`.
+- DAB (optional): Docker running and the decoder image built with `docker build -t rtlsdr-decoders docker/decoders`. Docker Desktop on macOS cannot reach USB, so the dongle is served by `rtl_tcp` on the host (port 1234) and the container connects to it.
+- Check the dongle: `rtl_test -t` should list `Realtek, RTL2838UHIDIR`.
+
+## Run it
 
 ```bash
+git clone https://github.com/Celtico/rtlsdr-scanner.git
+cd rtlsdr-scanner
 pnpm i
-pnpm dev          # server (http://localhost:4000) + web (http://localhost:5173)
-pnpm build
-pnpm typecheck
-pnpm lint
-pnpm test         # vitest (server), amb fixtures reals del dongle
+pnpm dev          # server on http://localhost:4000, web on http://localhost:5173
 ```
 
-Variables opcionals del servidor: `PORT` (4000), `SDR_DB` (ruta de la base de dades, per defecte `data/sdr.db`), `SDR_SAT_DIR` (captures de satèl·lit, per defecte `data/satellite`), `SATDUMP_BIN`, `SDR_DEBUG=1` (mostra el stderr de les eines `rtl_*`).
+Other commands: `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test` (vitest on the server, with fixtures captured from the dongle).
 
-## Estructura
+Optional server variables: `PORT` (4000), `SDR_DB` (database path, default `data/sdr.db`), `SDR_SAT_DIR` (satellite captures, default `data/satellite`), `SATDUMP_BIN`, `SDR_DEBUG=1` (shows stderr of the `rtl_*` tools).
 
-```
-server/src/
-  index.ts          Fastify: REST + WebSocket /ws
-  db.ts             esquema i consultes SQLite (better-sqlite3)
-  types.ts          tipus compartits amb el web
-  sdr/manager.ts    únic propietari del dongle: un sol mode actiu, cua, SIGINT→SIGKILL
-  sdr/process.ts    llançament de processos rtl_* i detecció d'errors USB
-  sdr/survey.ts     parser de rtl_power, assemblador d'escombrats, detecció de pics
-  sdr/devices.ts    parser de rtl_433 i dedup
-  sdr/adsb.ts       descodificador Mode S / ADS-B (CRC, indicatiu, altitud, CPR, velocitat)
-  sdr/icao.ts       blocs d'adreces ICAO → país
-  sdr/hunt.ts       mesurador de potència (una freqüència) i canalitzador EU868 de 8 canals a partir de l'IQ de rtl_sdr
-  sdr/audit.ts      classificació d'exposició (en clar / ID / codi variable) i rutines
-  sdr/satellite.ts  TLE (Celestrak, cau 12 h), predicció de passos SGP4, ordre de SatDump, galeria
-  sdr/emi.ts        anàlisi de soroll: trams, pintes, banda ampla, portadores, comparació amb línia base
-  sdr/calibration.ts offset dB→dBm per guany (calibrat, derivat o estimat)
-  sdr/bands.ts      taula de bandes
-server/test/        tests + fixtures capturades amb el dongle
-web/src/
-  pages/            Dashboard, Spectrum, Devices, Planes (+ Radar), Audit, Hunt, Satellites, Dab, Noise, History
-docker/decoders/    Dockerfile dels descodificadors (welle-cli, rtl-sdr, rtl_433)
-  components/       Waterfall i RadarCanvas (canvas), SignalsTable, DeviceDrawer, Layout…
-  store.tsx         estat global alimentat pel WebSocket
-```
+Set your own position in the Radar tab; it is used for the radar and for satellite pass prediction. The default is the centre of Lleida, Spain.
+
+## How it is built
+
+A pnpm monorepo with two packages:
+
+- `server/`: Node 22, TypeScript, Fastify + WebSocket. It launches the SDR tools as child processes and pushes events in real time. `sdr/manager.ts` is the single owner of the dongle: one active mode at a time, a queue, and clean shutdown of the previous tool before the next one takes the USB device.
+- `web/`: Vite + React + TypeScript with Chakra UI v3. The waterfall and the radar are plain `<canvas>`.
+
+Data lives in SQLite (`better-sqlite3`) under `data/`, which is git-ignored.
 
 ## API
 
-| Mètode | Ruta | Descripció |
+| Method | Route | Description |
 | --- | --- | --- |
-| GET | `/api/status` | mode actiu, estat del dongle, comptadors |
-| POST | `/api/mode` | `{ mode: 'idle' \| 'survey' \| 'devices' \| 'adsb' \| 'hunt' \| 'audio' \| 'dab', config }` (el mode `satellite` es llança des de les captures) |
-| GET | `/api/audio/stream` | PCM s16le mono 48 kHz de l'emissora FM en reproducció |
-| GET / POST / DELETE | `/api/emi?scanId=`, `/api/emi/baseline` | anàlisi EMI d'un escombrat, fixar/esborrar la línia base |
-| GET / POST / DELETE | `/api/calibration`, `/api/calibration/reading?scanId&freqHz`, `/api/calibration/:gain` | referències de calibratge, lectura d'un escombrat a una freqüència |
-| GET / POST | `/api/dab/channels`, `/api/dab/mux`, `/api/dab/channel`, `/api/dab/mp3/:sid` | blocs, estat del múltiplex (proxy de welle-cli), canvi de bloc, àudio d'un programa |
-| POST | `/api/dongle/check` | executa `rtl_test -t` (només en mode inactiu) |
-| GET | `/api/bands` | taula de bandes |
-| GET | `/api/signals?scanId=` | senyals detectats |
-| GET | `/api/sweeps?scanId=&limit=` | escombrats (per tornar a obrir un waterfall) |
-| GET | `/api/devices` | dispositius rtl_433 |
-| GET | `/api/devices/:id/history` | lectures d'un dispositiu |
+| GET | `/api/status` | active mode, dongle state, counters |
+| POST | `/api/mode` | `{ mode: 'idle' \| 'survey' \| 'devices' \| 'adsb' \| 'hunt' \| 'audio' \| 'dab', config }` (`satellite` mode is started from scheduled captures) |
+| GET | `/api/audio/stream` | PCM s16le mono 48 kHz of the FM station being played |
+| GET / POST / DELETE | `/api/emi?scanId=`, `/api/emi/baseline` | EMI analysis of a sweep, set/clear the baseline |
+| GET / POST / DELETE | `/api/calibration`, `/api/calibration/reading?scanId&freqHz`, `/api/calibration/:gain` | calibration references, reading of a sweep at one frequency |
+| GET / POST | `/api/dab/channels`, `/api/dab/mux`, `/api/dab/channel`, `/api/dab/mp3/:sid` | blocks, multiplex state (welle-cli proxy), block change, audio of one programme |
+| POST | `/api/dongle/check` | runs `rtl_test -t` (idle mode only) |
+| GET | `/api/bands` | band table |
+| GET | `/api/signals?scanId=` | detected signals |
+| GET | `/api/sweeps?scanId=&limit=` | sweeps (to reopen a waterfall) |
+| GET | `/api/devices` | rtl_433 devices |
+| GET | `/api/devices/:id/history` | readings of one device |
 | PATCH | `/api/devices/:id` | `{ alias?, owner?: 'own' \| 'other' \| null, bearingDeg? }` |
-| GET | `/api/audit` | exposició, activitat per hora i rutines dels dispositius propis |
-| GET | `/api/satellite/info`, `/api/satellite/passes?lat&lon&hours`, `/api/satellite/captures` | satèl·lits, passos previstos, captures |
-| POST / DELETE | `/api/satellite/captures[/:id]` | programa (o llança amb `now: true`) i cancel·la captures |
-| GET | `/api/satellite/files/:id/*` | imatges d'una captura |
-| GET | `/api/planes?scanId=` | avions |
-| GET | `/api/scans`, `/api/scans/:id`, DELETE `/api/scans/:id` | històric |
+| GET | `/api/audit` | exposure, hourly activity and routines of your own devices |
+| GET | `/api/satellite/info`, `/api/satellite/passes?lat&lon&hours`, `/api/satellite/captures` | satellites, predicted passes, captures |
+| POST / DELETE | `/api/satellite/captures[/:id]` | schedule (or start with `now: true`) and cancel captures |
+| GET | `/api/satellite/files/:id/*` | images of one capture |
+| GET | `/api/planes?scanId=` | aircraft |
+| GET | `/api/scans`, `/api/scans/:id`, DELETE `/api/scans/:id` | history |
 | GET | `/api/export/:kind?format=csv\|json&scanId=&deviceId=` | `signals`, `devices`, `planes`, `sweeps`, `readings` |
-| GET | `/api/satellite/antenna` | `reference/antena-137mhz.md` (mides de la V-dipole) |
+| GET | `/api/satellite/antenna` | `reference/antena-137mhz.md` (V-dipole dimensions) |
 | WS | `/ws` | `status`, `survey:sweep`, `survey:signals`, `device:new`, `device:update`, `adsb:plane`, `hunt:level`, `hunt:burst`, `satellite:capture`, `error` |
 
-## Notes d'ús
 
-- Només un procés pot fer servir el dongle. Canviar de mode atura l'anterior i espera que alliberi l'USB.
-- `rtl_power` amb pas d'1 MHz fa un salt d'un sol bin per MHz (1676 salts de 24 a 1700 MHz, ~73 s per passada). Amb passos ≤ 500 kHz cada salt cobreix 2,8 MHz (599 salts, ~23 s per passada), per això el pas per defecte és 100 kHz.
-- Bandes xifrades (mòbil, TETRA) només mostren «activitat detectada». No es descodifica ni es grava àudio de comunicacions privades.
-- Satèl·lits: el planificador llança la captura 20 s abans de l'AOS i pren el dongle encara que hi hagi un altre mode actiu. SatDump descodifica en acabar el temps del pas i sempre genera imatges (encara que només hi hagi soroll): mira'n la qualitat a la galeria. Amb la vareta els resultats són pobres; cal una V-dipole de 137 MHz (2 braços de 53,4 cm a 120°) o una QFH.
+## Notes
+
+- Only one process can use the dongle. Changing mode stops the previous one and waits for it to release the USB device.
+- `rtl_power` with a 1 MHz step hops one bin per MHz (about 73 s per pass from 24 to 1700 MHz). With steps of 500 kHz or less each hop covers 2.8 MHz (about 23 s per pass), which is why the default step is 100 kHz.
+- Satellites: the scheduler starts the capture 20 s before AOS and takes the dongle even if another mode is active. SatDump always produces images, even from noise: check the quality in the gallery. With the stock whip antenna results are poor; a 137 MHz V-dipole (two 53.4 cm arms at 120°) or a QFH is needed. See `reference/antena-137mhz.md`.
+
+## Privacy and the law
+
+The app shows what your receiver hears, which includes devices that are not yours. Receiving is legal in most places, but what you may do with what you receive is not the same everywhere: check your local rules, do not publish other people's device identifiers, and never use a captured code to operate something that is not yours.
+
+## License
+
+[MIT](LICENSE)
