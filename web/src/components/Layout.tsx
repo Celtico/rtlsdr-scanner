@@ -12,17 +12,18 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { DongleBadge } from '@/components/DongleBadge';
 import { AudioPlayer } from '@/components/AudioPlayer';
 
-const NAV: { to: string; label: string; icon: ReactNode }[] = [
-  { to: '/', label: 'Tauler', icon: <LuLayoutDashboard /> },
-  { to: '/espectre', label: 'Espectre', icon: <LuActivity /> },
-  { to: '/dispositius', label: 'Dispositius', icon: <MdSensors /> },
-  { to: '/avions', label: 'Avions', icon: <LuPlane /> },
-  { to: '/auditoria', label: 'Auditoria', icon: <LuShieldCheck /> },
-  { to: '/hunt', label: 'Hunt', icon: <LuCrosshair /> },
-  { to: '/satellits', label: 'Satèl·lits', icon: <LuSatellite /> },
-  { to: '/dab', label: 'DAB', icon: <LuRadioTower /> },
-  { to: '/soroll', label: 'Soroll (EMI)', icon: <LuZap /> },
-  { to: '/historic', label: 'Històric', icon: <LuHistory /> },
+/** `what`: what the section is for. `how`: the first thing to do there. Shown at the top of each page. */
+const NAV: { to: string; label: string; icon: ReactNode; what: string; how: string }[] = [
+  { to: '/', label: 'Tauler', icon: <LuLayoutDashboard />, what: 'Resum de tot el que el receptor ha trobat fins ara.', how: 'El dongle només fa una cosa alhora: tria què vols que faci des de cada secció.' },
+  { to: '/espectre', label: 'Espectre', icon: <LuActivity />, what: 'Mesura quanta potència hi ha a cada freqüència: el mapa del que s’emet al teu voltant (FM, TDT, mòbil, comandaments…).', how: 'Prem «Inicia» i deixa’l uns minuts. A la llista, el ▶ d’una emissora FM te la fa escoltar.' },
+  { to: '/dispositius', label: 'Dispositius', icon: <MdSensors />, what: 'Escolta 433 i 868 MHz i descodifica sensors, estacions meteorològiques i comandaments propers.', how: 'Prem «Escolta dispositius» i fes servir un comandament: apareixerà a la llista.' },
+  { to: '/avions', label: 'Avions', icon: <LuPlane />, what: 'Rep la posició que emeten els avions (ADS-B, 1090 MHz) i els dibuixa en una taula i un radar.', how: 'Prem «Escolta avions» i espera uns minuts. Amb l’antena a la finestra se’n reben molts més.' },
+  { to: '/auditoria', label: 'Auditoria', icon: <LuShieldCheck />, what: 'Què pot saber de casa teva algú amb un receptor com aquest: quins dels teus dispositius emeten identificadors fixos.', how: 'No cal engegar res: treballa amb el que ja s’ha detectat a «Dispositius».' },
+  { to: '/hunt', label: 'Hunt', icon: <LuCrosshair />, what: 'Mesura en directe la força d’un senyal a 868 MHz, per trobar on és un sensor caminant amb el portàtil.', how: 'Inicia el mode Hunt i acosta-t’hi: com més alt el nivell, més a prop.' },
+  { to: '/satellits', label: 'Satèl·lits', icon: <LuSatellite />, what: 'Calcula quan passen els satèl·lits meteorològics i en grava el pas per treure’n la imatge.', how: 'Cal una antena per a 137 MHz i SatDump instal·lat. Programa un pas de la llista.' },
+  { to: '/dab', label: 'DAB', icon: <LuRadioTower />, what: 'Ràdio digital DAB: llista les emissores d’un canal i les reprodueix.', how: 'Necessita Docker. Tria un canal, espera que surtin les emissores i prem ▶.' },
+  { to: '/soroll', label: 'Soroll (EMI)', icon: <LuZap />, what: 'Mira si el soroll de fons de ràdio de casa és més alt del normal i quin aparell l’embruta.', how: 'Fixa una línia base amb tot endollat, desendolla un aparell, repeteix l’escombrat i mira què baixa.' },
+  { to: '/historic', label: 'Històric', icon: <LuHistory />, what: 'Tot el que has fet: cada fila és una vegada que has engegat un mode.', how: 'La carpeta torna a obrir un escombrat, la fletxa n’exporta les dades i la paperera l’esborra.' },
 ];
 
 function NavItems({ onNavigate }: { onNavigate?: () => void }) {
@@ -68,6 +69,7 @@ export function Layout() {
   const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
   const location = useLocation();
+  const page = NAV.find((n) => n.to === location.pathname);
   const mode = status?.mode ?? 'idle';
   const active = mode !== 'idle';
 
@@ -146,7 +148,7 @@ export function Layout() {
             <LuMenu />
           </IconButton>
           <Heading size="md" display={{ base: 'none', sm: 'block' }}>
-            {NAV.find((n) => n.to === location.pathname)?.label ?? 'Tauler'}
+            {page?.label ?? 'Tauler'}
           </Heading>
           <Box flex="1" />
           <HStack gap="2" flexWrap="wrap" justify="flex-end">
@@ -180,6 +182,11 @@ export function Layout() {
         </Flex>
 
         <Box as="main" flex="1" p={{ base: '3', md: '6' }} minW="0" maxW="100vw" overflowX="hidden">
+          {page && (
+            <Text fontSize="sm" color="fg.muted" mb="4" maxW="5xl">
+              <Text as="span" color="fg">{page.what}</Text> {page.how}
+            </Text>
+          )}
           <Outlet />
         </Box>
       </Flex>
