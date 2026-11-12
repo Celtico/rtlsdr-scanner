@@ -1,5 +1,5 @@
-import { Badge, Box, Button, Card, Field, HStack, Input, NativeSelect, SegmentGroup, SimpleGrid, Stack, Text } from '@chakra-ui/react';
-import { useEffect, useMemo, useState } from 'react';
+import { Badge, Box, Button, Card, Field, HStack, Input, NativeSelect, SegmentGroup, SimpleGrid, Skeleton, Stack, Text } from '@chakra-ui/react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { LuHouse, LuPlane, LuPlay } from 'react-icons/lu';
 import { MdSensors } from 'react-icons/md';
 import { DEFAULT_HOME } from '@shared/types';
@@ -7,6 +7,9 @@ import { useNow, useSdr } from '@/store';
 import { distanceKm } from '@/lib/geo';
 import { RadarCanvas, type RadarFilter } from '@/components/RadarCanvas';
 import { altitudeColor } from '@/lib/radar';
+
+// three.js only loads when the 3D view is opened.
+const Radar3D = lazy(() => import('@/components/Radar3D').then((m) => ({ default: m.Radar3D })));
 
 const HOME_KEY = 'sdr-home';
 
@@ -28,6 +31,7 @@ export function Radar() {
   const [lonTxt, setLonTxt] = useState(String(home.lon));
   const [filter, setFilter] = useState<RadarFilter>('all');
   const [range, setRange] = useState<'auto' | number>('auto');
+  const [view, setView] = useState<'2d' | '3d'>('2d');
 
   useEffect(() => {
     try { localStorage.setItem(HOME_KEY, JSON.stringify(home)); } catch { /* ignore */ }
@@ -63,6 +67,10 @@ export function Radar() {
                 ]} />
               </SegmentGroup.Root>
               <HStack gap="3" flexWrap="wrap">
+                <SegmentGroup.Root value={view} onValueChange={(e) => setView(e.value === '3d' ? '3d' : '2d')} size="sm" aria-label="Vista del radar">
+                  <SegmentGroup.Indicator />
+                  <SegmentGroup.Items items={[{ value: '2d', label: 'Planta' }, { value: '3d', label: '3D' }]} />
+                </SegmentGroup.Root>
                 <Field.Root orientation="horizontal" w="auto">
                   <Field.Label fontSize="sm">Abast</Field.Label>
                   <NativeSelect.Root size="sm" w="32">
@@ -98,7 +106,13 @@ export function Radar() {
 
       <SimpleGrid columns={{ base: 1, xl: 3 }} gap="4">
         <Box gridColumn={{ base: 'auto', xl: 'span 2' }}>
-          <RadarCanvas home={home} rangeKm={rangeKm} planes={planes} trails={trails} devices={shownDevices} filter={filter} now={now} />
+          {view === '3d' ? (
+            <Suspense fallback={<Skeleton h="560px" rounded="l2" />}>
+              <Radar3D home={home} rangeKm={rangeKm} planes={planes} trails={trails} now={now} />
+            </Suspense>
+          ) : (
+            <RadarCanvas home={home} rangeKm={rangeKm} planes={planes} trails={trails} devices={shownDevices} filter={filter} now={now} />
+          )}
         </Box>
         <Card.Root size="sm">
           <Card.Header>

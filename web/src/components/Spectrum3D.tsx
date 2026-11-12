@@ -6,6 +6,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { Band, Sweep } from '@shared/types';
 import { LUT, displayRange, downsample } from '@/lib/colormap';
 import { formatMHz } from '@/lib/format';
+import { disposeGroup, label } from '@/lib/three-helpers';
 
 /**
  * The spectrum as a landscape: X is frequency, height is signal level and depth is time, with the latest
@@ -37,19 +38,6 @@ interface Stage {
   data: THREE.Group;
 }
 
-function disposeGroup(group: THREE.Group) {
-  for (const child of [...group.children]) {
-    group.remove(child);
-    const obj = child as THREE.Mesh | THREE.Line | THREE.Sprite;
-    obj.geometry?.dispose();
-    const mat = obj.material as THREE.Material | THREE.Material[] | undefined;
-    for (const m of Array.isArray(mat) ? mat : mat ? [mat] : []) {
-      (m as THREE.SpriteMaterial).map?.dispose();
-      m.dispose();
-    }
-  }
-}
-
 /** The waterfall palette in linear space: vertex colours are linear, the LUT is sRGB. */
 const LINEAR_LUT = new Float32Array(256 * 3);
 {
@@ -71,27 +59,6 @@ function tickStep(spanHz: number, target = 7): number {
 }
 
 const tickLabel = (hz: number) => (hz >= 1e9 ? `${+(hz / 1e9).toFixed(3)} GHz` : `${+(hz / 1e6).toFixed(3)} MHz`);
-
-/** A text label that always faces the camera. */
-function label(text: string, color: string, scale = 1): THREE.Sprite {
-  const pad = 8;
-  const font = '600 28px system-ui, sans-serif';
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d')!;
-  ctx.font = font;
-  canvas.width = Math.ceil(ctx.measureText(text).width) + pad * 2;
-  canvas.height = 44;
-  ctx.font = font;
-  ctx.fillStyle = color;
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, pad, canvas.height / 2);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
-  const h = 2.4 * scale;
-  sprite.scale.set((canvas.width / canvas.height) * h, h, 1);
-  return sprite;
-}
 
 export function Spectrum3D({ sweeps, bands, markedHz }: Spectrum3DProps) {
   const mountRef = useRef<HTMLDivElement>(null);
