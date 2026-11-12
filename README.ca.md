@@ -4,6 +4,10 @@
 
 Aplicació web local per descobrir quins senyals de ràdio hi ha a casa amb un **RTL-SDR Blog V3** i, quan es pot, quin dispositiu els emet i quines dades envia. Només recepció.
 
+![L'espectre com a paisatge 3D, d'un escombrat real](docs/demo.gif)
+
+*Un escombrat real de 24 MHz a 1,7 GHz amb l'antena de sèrie. [Vídeo de 22 segons (MP4)](docs/demo.mp4).*
+
 - **Espectre**: escombrats amb `rtl_power`, waterfall en temps real, detecció de pics sobre el soroll de fons i classificació per banda (ES/UE).
 - **Espectre 3D**: els mateixos escombrats com un paisatge que es pot girar: amplada = freqüència, alçada = intensitat, profunditat = temps. És el waterfall en volum, no un mapa d'on venen els senyals (amb una sola antena no hi ha direcció).
 - **Dispositius**: `rtl_433` saltant entre 433,92 i 868,3 MHz. Dedup per model+id+canal, històric de lectures, àlies, filtre «probablement meu / veïns».

@@ -6,6 +6,10 @@ A local web app to find out which radio signals are around you with an **RTL-SDR
 
 It runs entirely on your machine: the server talks to the dongle, the browser shows the result, and everything you capture stays in a local SQLite file. Nothing is uploaded anywhere.
 
+![The spectrum as a 3D landscape, from a real sweep](docs/demo.gif)
+
+*A real sweep from 24 MHz to 1.7 GHz, stock antenna. [22-second demo video (MP4)](docs/demo.mp4).*
+
 ![Spectrum sweep with waterfall and detected signals](docs/screenshots/espectre.png)
 
 > **Status:** a personal project that works on my setup (macOS, RTL-SDR Blog V3, stock antenna). The interface is in Catalan for now. Feedback on what is missing or wrong is very welcome: open an issue.
