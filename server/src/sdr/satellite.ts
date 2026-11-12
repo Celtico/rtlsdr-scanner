@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { degreesToRadians, ecfToLookAngles, eciToEcf, gstime, propagate, radiansToDegrees, twoline2satrec, type SatRec } from 'satellite.js';
-import type { SatelliteConfig, SatInfo, SatPass } from '../types.js';
+import type { SatelliteConfig, SatInfo, SatPass, SkyGroup, SkySat } from '../types.js';
 
 /** Low-earth-orbit weather satellites we can receive at 137 MHz. Frequencies from the SatDump pipelines. */
 export const SATELLITES: SatInfo[] = [
@@ -109,6 +109,86 @@ export function predictAll(tles: TleSet, obs: Observer, from = Date.now(), hours
     const tle = tles.tles[s.name];
     return tle ? predictPasses(s.name, tle, obs, from, hours, minElevation) : [];
   }).sort((a, b) => a.aos - b.aos);
+}
+
+// ---------- sky view ----------
+
+/** Satellites drawn besides the weather ones. Celestrak query → group. */
+const SKY_SOURCES: { query: string; group: SkyGroup; freqHz: number | null }[] = [
+  { query: 'CATNR=25544', group: 'iss', freqHz: 145_800_000 },
+  { query: 'GROUP=gps-ops', group: 'gps', freqHz: 1_575_420_000 },
+];
+
+export interface SkyTleSet { fetchedAt: number; sats: { name: string; group: SkyGroup; freqHz: number | null; tle: [string, string] }[] }
+
+/** Parses Celestrak's three-line format: a name line followed by lines 1 and 2. */
+export function parseTleList(text: string): { name: string; tle: [string, string] }[] {
+  const lines = text.split('\n').map((l) => l.trimEnd()).filter(Boolean);
+  const out: { name: string; tle: [string, string] }[] = [];
+  for (let i = 0; i + 2 < lines.length; i++) {
+    const [name, l1, l2] = [lines[i]!, lines[i + 1]!, lines[i + 2]!];
+    if (l1.startsWith('1 ') && l2.startsWith('2 ') && !name.startsWith('1 ') && !name.startsWith('2 ')) {
+      out.push({ name: name.trim(), tle: [l1, l2] });
+      i += 2;
+    }
+  }
+  return out;
+}
+
+/** "GPS BIIR-2  (PRN 13)" → "GPS 13"; "ISS (ZARYA)" → "ISS". */
+export function skyName(raw: string): string {
+  const prn = /\(PRN\s*(\d+)\)/.exec(raw);
+  if (prn) return `GPS ${Number(prn[1])}`;
+  return raw.replace(/\s*\(.*\)\s*$/, '').trim();
+}
+
+/** TLEs of the extra sky satellites, cached like the weather ones. A stale cache is better than none. */
+export async function loadSkyTles(cachePath: string, fetchImpl: typeof fetch = fetch, now = Date.now()): Promise<SkyTleSet> {
+  let cached: SkyTleSet | null = null;
+  if (existsSync(cachePath)) {
+    try { cached = JSON.parse(readFileSync(cachePath, 'utf8')) as SkyTleSet; } catch { /* refetch */ }
+  }
+  if (cached && now - cached.fetchedAt < TLE_MAX_AGE_MS) return cached;
+  try {
+    const sats: SkyTleSet['sats'] = [];
+    for (const src of SKY_SOURCES) {
+      const res = await fetchImpl(`https://celestrak.org/NORAD/elements/gp.php?${src.query}&FORMAT=tle`, { signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) throw new Error(`Celestrak ${res.status} per ${src.query}`);
+      for (const t of parseTleList(await res.text())) sats.push({ name: skyName(t.name), group: src.group, freqHz: src.freqHz, tle: t.tle });
+    }
+    if (sats.length === 0) throw new Error('Celestrak no ha tornat cap TLE');
+    const set = { fetchedAt: now, sats };
+    mkdirSync(join(cachePath, '..'), { recursive: true });
+    writeFileSync(cachePath, JSON.stringify(set));
+    return set;
+  } catch (e) {
+    if (cached) return cached;
+    throw e;
+  }
+}
+
+/**
+ * Where each satellite is in the observer's sky from `from` to `to`: only those above the horizon at some
+ * point of the window. The client interpolates between samples.
+ */
+export function skyTracks(
+  sats: { name: string; group: SkyGroup; freqHz: number | null; tle: [string, string] }[],
+  obs: Observer, from: number, to: number, stepMs = 15_000,
+): SkySat[] {
+  const out: SkySat[] = [];
+  for (const s of sats) {
+    const satrec = twoline2satrec(s.tle[0], s.tle[1]);
+    const track: SkySat['track'] = [];
+    let up = false;
+    for (let t = from; t <= to; t += stepMs) {
+      const la = lookAngles(satrec, new Date(t), obs);
+      if (!la) break;
+      if (la.elevation > 0) up = true;
+      track.push([t, Math.round(la.azimuth * 10) / 10, Math.round(la.elevation * 10) / 10]);
+    }
+    if (up) out.push({ name: s.name, group: s.group, freqHz: s.freqHz, track });
+  }
+  return out;
 }
 
 /**

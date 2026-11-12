@@ -21,7 +21,7 @@ It runs entirely on your machine: the server talks to the dongle, the browser sh
 - **Devices**: `rtl_433` hopping between 433.92 and 868.3 MHz. Deduplicated by model + id + channel, with reading history, aliases and a "probably mine / neighbours" filter based on signal strength.
 - **Aircraft**: ADS-B at 1090 MHz with `rtl_adsb` (ICAO address, country from the ICAO block, callsign, altitude, position, speed, heading).
 - **Radar**: a plan view centred on your home position. Aircraft are drawn at their real position with a trail; other devices sit on RSSI rings with unknown direction (or a manual bearing, if you found it with a directional antenna).
-- **3D radar**: the same aircraft in three dimensions around your home: real bearing, distance and altitude, with a stem to the ground, the track flown and where each one will be in two minutes. Sensors and remotes, which report no position, are rings on the ground sized by signal strength: how close, not which way.
+- **3D radar**: the same aircraft in three dimensions around your home: real bearing, distance and altitude, with a stem to the ground, the track flown and where each one will be in two minutes. Sensors and remotes, which report no position, are rings on the ground sized by signal strength: how close, not which way. The ground can be a street map (OpenStreetMap tiles, darkened), and a sky dome shows the satellites above the horizon right now (weather satellites, the ISS and GPS), computed from their published orbits and labelled as such: where to look, not something the dongle heard.
 - **Audit**: the radio exposure of your own home. What transmits in the clear, what can be identified by a fixed ID, daily routines, and recommendations. Metadata of your own devices only.
 - **Hunt**: find a lost LoRaWAN sensor. In EU868 mode it watches the 8 channels (867.1–868.5 MHz) at once in a single 2.4 MHz window (raw IQ from `rtl_sdr`, own channeliser), with per-channel RSSI 10 times a second, a burst list, and a metal-detector-style tone so you can walk around without looking at the screen.
 - **Satellites**: NOAA-15/19 (APT) and Meteor-M2 3/4 (LRPT) passes from Celestrak TLEs (SGP4), scheduled captures decoded by **SatDump**, and a gallery of the images.
@@ -33,7 +33,7 @@ It runs entirely on your machine: the server talks to the dongle, the browser sh
 
 ![3D spectrum landscape](docs/screenshots/espectre-3d.png)
 
-![3D radar with aircraft at their real position and altitude](docs/screenshots/radar-3d.png)
+![3D radar: aircraft at their real position and altitude over a street map, satellites on the sky dome](docs/screenshots/radar-3d.png)
 
 *The two 3D views, here with synthetic data.*
 
@@ -108,6 +108,7 @@ Data lives in SQLite (`better-sqlite3`) under `data/`, which is git-ignored.
 | GET | `/api/planes?scanId=` | aircraft |
 | GET | `/api/scans`, `/api/scans/:id`, DELETE `/api/scans/:id` | history |
 | GET | `/api/export/:kind?format=csv\|json&scanId=&deviceId=` | `signals`, `devices`, `planes`, `sweeps`, `readings` |
+| GET | `/api/satellite/sky?lat&lon` | satellites above the horizon in the next minutes (azimuth and elevation tracks, computed from Celestrak TLEs) |
 | GET | `/api/satellite/antenna` | `reference/antena-137mhz.md` (V-dipole dimensions) |
 | WS | `/ws` | `status`, `survey:sweep`, `survey:signals`, `device:new`, `device:update`, `adsb:plane`, `hunt:level`, `hunt:burst`, `satellite:capture`, `error` |
 

@@ -231,6 +231,18 @@ export interface SatPass {
   durationS: number;
 }
 
+/** What a satellite on the sky dome is: one we can decode, the space station, or a navigation satellite. */
+export type SkyGroup = 'weather' | 'iss' | 'gps';
+
+export interface SkySat {
+  name: string;
+  group: SkyGroup;
+  /** Downlink we could tune to, when there is one worth naming. */
+  freqHz: number | null;
+  /** [time ms, azimuth °, elevation °] samples around now. Computed from the published orbit, not received. */
+  track: [number, number, number][];
+}
+
 export type SatCaptureStatus = 'scheduled' | 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface SatCapture {

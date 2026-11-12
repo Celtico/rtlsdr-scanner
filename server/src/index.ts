@@ -10,7 +10,7 @@ import { BANDS } from './sdr/bands.js';
 import { killAllSync } from './sdr/process.js';
 import { toCsv } from './export.js';
 import { classifyDevice, routineHours } from './sdr/audit.js';
-import { loadTles, predictAll, satInfo, SATELLITES } from './sdr/satellite.js';
+import { loadSkyTles, loadTles, predictAll, satInfo, SATELLITES, skyTracks } from './sdr/satellite.js';
 import { analyzeEmi, compareReports, floorTrend, medianSpectrum, type EmiReport } from './sdr/emi.js';
 import { removeEntry, upsertEntry, type Calibration } from './sdr/calibration.js';
 import { icaoCountry } from './sdr/icao.js';
@@ -27,6 +27,7 @@ const DB_PATH = process.env.SDR_DB ?? resolve(ROOT, 'data', 'sdr.db');
 
 const SAT_DIR = process.env.SDR_SAT_DIR ?? resolve(ROOT, 'data', 'satellite');
 const TLE_PATH = resolve(ROOT, 'data', 'tle.json');
+const SKY_TLE_PATH = resolve(ROOT, 'data', 'tle-sky.json');
 
 const db = new Db(DB_PATH);
 db.closeDanglingScans();
@@ -436,6 +437,27 @@ app.get<{ Querystring: { lat?: string; lon?: string; hours?: string; minEl?: str
   } catch (e) {
     return reply.code(502).send({ error: `No s’han pogut obtenir els TLE: ${(e as Error).message}` });
   }
+});
+
+/**
+ * Satellites above the horizon in the next minutes, for the 3D radar. Positions are computed from the
+ * published orbits: nothing here is received by the dongle.
+ */
+app.get<{ Querystring: { lat?: string; lon?: string; minutes?: string } }>('/api/satellite/sky', async (req, reply) => {
+  const obs = { lat: num(req.query.lat, DEFAULT_HOME.lat), lon: num(req.query.lon, DEFAULT_HOME.lon) };
+  const now = Date.now();
+  const to = now + Math.min(30, Math.max(1, num(req.query.minutes, 12))) * 60_000;
+  // Each source is independent: the weather set alone is still worth drawing.
+  const [weather, extra] = await Promise.allSettled([loadTles(TLE_PATH), loadSkyTles(SKY_TLE_PATH)]);
+  const sats = [
+    ...(weather.status === 'fulfilled'
+      ? SATELLITES.flatMap((s) => { const tle = weather.value.tles[s.name]; return tle ? [{ name: s.name, group: 'weather' as const, freqHz: s.freqHz, tle }] : []; })
+      : []),
+    ...(extra.status === 'fulfilled' ? extra.value.sats : []),
+  ];
+  if (sats.length === 0) return reply.code(502).send({ error: 'No s’han pogut obtenir els TLE de Celestrak' });
+  const fetchedAt = Math.min(...[weather, extra].flatMap((r) => (r.status === 'fulfilled' ? [r.value.fetchedAt] : [])));
+  return { at: now, tleFetchedAt: fetchedAt, satellites: skyTracks(sats, obs, now - 30_000, to) };
 });
 
 app.get('/api/satellite/captures', async () => db.listSatCaptures());

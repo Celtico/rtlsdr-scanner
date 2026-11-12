@@ -1,4 +1,4 @@
-import type { Band, Device, ModeConfig, Plane, Reading, SatCapture, SatInfo, SatPass, Scan, Signal, Status, Sweep } from '@shared/types';
+import type { Band, Device, ModeConfig, Plane, Reading, SatCapture, SatInfo, SatPass, Scan, SkySat, Signal, Status, Sweep } from '@shared/types';
 import type { AuditVerdict } from '@shared/sdr/audit';
 import type { ChunkDelta, EmiReport } from '@shared/sdr/emi';
 import type { CalScale, Calibration } from '@shared/sdr/calibration';
@@ -66,6 +66,7 @@ export const api = {
   satAntenna: () => request<{ markdown: string }>('/api/satellite/antenna'),
   satInfo: () => request<{ satellites: SatInfo[]; satdump: boolean; dir: string }>('/api/satellite/info'),
   satPasses: (lat: number, lon: number, hours = 24) => request<{ tleFetchedAt: number; passes: (SatPass & { captureId: number | null })[] }>(`/api/satellite/passes?lat=${lat}&lon=${lon}&hours=${hours}`),
+  satSky: (lat: number, lon: number) => request<{ at: number; tleFetchedAt: number; satellites: SkySat[] }>(`/api/satellite/sky?lat=${lat}&lon=${lon}`),
   satCaptures: () => request<SatCapture[]>('/api/satellite/captures'),
   satSchedule: (b: { satellite: string; aos?: number; los?: number; maxElevationDeg?: number; gainDb?: number; now?: boolean }) => request<SatCapture>('/api/satellite/captures', { method: 'POST', body: JSON.stringify(b) }),
   satCancel: (id: number) => request<SatCapture | { ok: true }>(`/api/satellite/captures/${id}`, { method: 'DELETE' }),

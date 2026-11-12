@@ -23,3 +23,14 @@ export function compassLabel(deg: number): string {
   const names = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
   return names[Math.round(deg / 45) % 8]!;
 }
+
+/** The point `km` away from a start point along a bearing (degrees clockwise from north). */
+export function destination(lat: number, lon: number, bearing: number, km: number): { lat: number; lon: number } {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const δ = km / R;
+  const θ = toRad(bearing);
+  const φ1 = toRad(lat);
+  const φ2 = Math.asin(Math.sin(φ1) * Math.cos(δ) + Math.cos(φ1) * Math.sin(δ) * Math.cos(θ));
+  const λ2 = toRad(lon) + Math.atan2(Math.sin(θ) * Math.sin(δ) * Math.cos(φ1), Math.cos(δ) - Math.sin(φ1) * Math.sin(φ2));
+  return { lat: (φ2 * 180) / Math.PI, lon: ((((λ2 * 180) / Math.PI) + 540) % 360) - 180 };
+}

@@ -1,11 +1,13 @@
 import { Box, Button, HStack, Text } from '@chakra-ui/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { LuFocus, LuPause, LuRotate3D } from 'react-icons/lu';
+import { LuFocus, LuMap, LuPause, LuRotate3D, LuSatellite } from 'react-icons/lu';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import type { Device, Plane } from '@shared/types';
+import type { Device, Plane, SkySat } from '@shared/types';
 import type { TrailPoint } from '@/store';
-import { bearingDeg, distanceKm } from '@/lib/geo';
+import { api } from '@/lib/api';
+import { BASEMAP_ATTRIBUTION, loadBasemap } from '@/lib/basemap';
+import { bearingDeg, destination, distanceKm } from '@/lib/geo';
 import { altitudeColor, rssiToRadius } from '@/lib/radar';
 import type { RadarFilter } from '@/components/RadarCanvas';
 import { disposeGroup, label } from '@/lib/three-helpers';
@@ -14,6 +16,8 @@ import { disposeGroup, label } from '@/lib/three-helpers';
  * What the receiver hears around home, in three dimensions. Aircraft are at their real position: ADS-B
  * frames carry the aircraft's own GPS fix and altitude. Sensors and remotes send no position, so each is
  * a ring on the ground whose radius comes from its signal strength: how close, never which way.
+ * Satellites are drawn on a sky dome by direction only (azimuth and elevation), computed from their
+ * published orbits: they are where to look, not something the dongle heard.
  */
 
 /** Scene units: the range ring sits at RADIUS, and CEILING_FT is drawn at CEILING. */
@@ -24,6 +28,39 @@ const KM_PER_FT = 0.0003048;
 const HEIGHT_PX = 560;
 const BG = 0x0b0d10;
 const TEAL = 0x2dd4bf;
+/** The sky dome: as wide as the range ring, and this tall at the zenith. */
+const DOME_HEIGHT = 46;
+const SKY_COLOR: Record<SkySat['group'], number> = { weather: 0xfbbf24, iss: 0xf472b6, gps: 0x93a4b3 };
+/** Sky tracks are fetched again this often; in between, positions are interpolated. */
+const SKY_REFRESH_MS = 5 * 60_000;
+const MAP_KEY = 'sdr-radar3d-map';
+const SKY_KEY = 'sdr-radar3d-sky';
+
+function readFlag(key: string): boolean {
+  try { return localStorage.getItem(key) !== '0'; } catch { return true; }
+}
+function writeFlag(key: string, on: boolean) {
+  try { localStorage.setItem(key, on ? '1' : '0'); } catch { /* ignore */ }
+}
+
+/** A direction in the sky as a point on the dome. */
+function domePoint(azDeg: number, elDeg: number): THREE.Vector3 {
+  const az = (azDeg * Math.PI) / 180;
+  const el = (elDeg * Math.PI) / 180;
+  return new THREE.Vector3(Math.sin(az) * Math.cos(el) * RADIUS, Math.sin(el) * DOME_HEIGHT, -Math.cos(az) * Math.cos(el) * RADIUS);
+}
+
+/** Azimuth and elevation of a satellite at `t`, interpolated between its samples; null outside them. */
+function skyAt(track: SkySat['track'], t: number): { az: number; el: number } | null {
+  if (track.length === 0 || t < track[0]![0] || t > track[track.length - 1]![0]) return null;
+  let i = 1;
+  while (i < track.length - 1 && track[i]![0] < t) i++;
+  const [t0, az0, el0] = track[i - 1]!;
+  const [t1, az1, el1] = track[i]!;
+  const f = t1 === t0 ? 0 : (t - t0) / (t1 - t0);
+  const turn = ((az1 - az0 + 540) % 360) - 180; // the short way round north
+  return { az: (az0 + turn * f + 360) % 360, el: el0 + (el1 - el0) * f };
+}
 /** A plane not heard for this long is drawn faded. */
 const STALE_MS = 60_000;
 /** Aircraft heard without a position are kept on the altitude mast for this long. */
@@ -45,6 +82,10 @@ interface Stage {
   frame: THREE.Group;
   /** Aircraft: rebuilt when the data changes. */
   traffic: THREE.Group;
+  /** The street map on the ground. */
+  map: THREE.Group;
+  /** The sky dome and the satellites on it. */
+  sky: THREE.Group;
 }
 
 const altY = (ft: number | null) => (Math.max(0, ft ?? 0) / CEILING_FT) * CEILING;
@@ -68,7 +109,14 @@ export function Radar3D({ home, rangeKm, planes, trails, devices, filter, now }:
   const mountRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Stage | null>(null);
   const [spin, setSpin] = useState(true);
+  const [mapOn, setMapOn] = useState(() => readFlag(MAP_KEY));
+  const [skyOn, setSkyOn] = useState(() => readFlag(SKY_KEY));
+  const [mapState, setMapState] = useState<'off' | 'loading' | 'ready' | 'failed'>('off');
+  const [sats, setSats] = useState<SkySat[]>([]);
+  const [skyError, setSkyError] = useState(false);
   const spinRef = useRef(spin);
+  useEffect(() => { writeFlag(MAP_KEY, mapOn); }, [mapOn]);
+  useEffect(() => { writeFlag(SKY_KEY, skyOn); }, [skyOn]);
   useEffect(() => { spinRef.current = spin; if (stageRef.current) stageRef.current.controls.autoRotate = spin; }, [spin]);
 
   /** Ground position of a lat/lon: east is +X, north is −Z. */
@@ -137,7 +185,9 @@ export function Radar3D({ home, rangeKm, planes, trails, devices, filter, now }:
 
     const frame = new THREE.Group();
     const traffic = new THREE.Group();
-    scene.add(frame, traffic);
+    const map = new THREE.Group();
+    const sky = new THREE.Group();
+    scene.add(map, frame, traffic, sky);
 
     const resize = () => {
       const w = mount.clientWidth || 800;
@@ -158,19 +208,112 @@ export function Radar3D({ home, rangeKm, planes, trails, devices, filter, now }:
     };
     tick();
 
-    stageRef.current = { controls, frame, traffic };
+    stageRef.current = { controls, frame, traffic, map, sky };
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
       controls.dispose();
       disposeGroup(frame);
       disposeGroup(traffic);
+      disposeGroup(map);
+      disposeGroup(sky);
       for (const m of [ground, beam]) { m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
       renderer.dispose();
       mount.removeChild(renderer.domElement);
       stageRef.current = null;
     };
   }, []);
+
+  // The street map: a disc whose every vertex looks up its own place on the stitched tiles, so the map
+  // follows the same distance-and-bearing projection as everything drawn on top of it.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    disposeGroup(stage.map);
+    if (!mapOn) { setMapState('off'); return; }
+    setMapState('loading');
+    const abort = new AbortController();
+    void loadBasemap(home, rangeKm, abort.signal).then((basemap) => {
+      if (abort.signal.aborted || stageRef.current !== stage) return;
+      if (!basemap) { setMapState('failed'); return; }
+      const geometry = new THREE.RingGeometry(0, RADIUS, 96, 28);
+      const pos = geometry.getAttribute('position');
+      const uv = geometry.getAttribute('uv');
+      for (let i = 0; i < pos.count; i++) {
+        // Before the disc is laid flat, +X is east and +Y is north.
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        const at = destination(home.lat, home.lon, (Math.atan2(x, y) * 180) / Math.PI, (Math.hypot(x, y) / RADIUS) * rangeKm);
+        const [u, v] = basemap.uv(at.lat, at.lon);
+        uv.setXY(i, u, v);
+      }
+      uv.needsUpdate = true;
+      const texture = new THREE.CanvasTexture(basemap.canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = 8;
+      const disc = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ map: texture }));
+      disc.rotation.x = -Math.PI / 2;
+      disc.position.y = -0.01;
+      stage.map.add(disc);
+      setMapState('ready');
+    });
+    return () => abort.abort();
+  }, [mapOn, home, rangeKm]);
+
+  // Satellite tracks, refreshed now and then.
+  useEffect(() => {
+    if (!skyOn) { setSats([]); setSkyError(false); return; }
+    let alive = true;
+    const load = () => api.satSky(home.lat, home.lon)
+      .then((r) => { if (alive) { setSats(r.satellites); setSkyError(false); } })
+      .catch(() => { if (alive) setSkyError(true); });
+    void load();
+    const id = setInterval(() => void load(), SKY_REFRESH_MS);
+    return () => { alive = false; clearInterval(id); };
+  }, [skyOn, home]);
+
+  const overhead = useMemo(
+    () => sats.flatMap((s) => { const at = skyAt(s.track, now); return at && at.el > 0 ? [{ sat: s, ...at }] : []; }),
+    [sats, now],
+  );
+
+  // The sky dome and what is on it.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    disposeGroup(stage.sky);
+    if (!skyOn) return;
+    const g = stage.sky;
+    // Elevation circles and four ribs, so the dome reads as a surface.
+    for (const el of [30, 60]) {
+      const r = Math.cos((el * Math.PI) / 180) * RADIUS;
+      g.add(circle(r, domePoint(0, el).y, 0x3b4a5a, 0.5));
+      const s = label(`${el}°`, '#6b7a88', 0.55);
+      s.position.copy(domePoint(135, el));
+      g.add(s);
+    }
+    for (const az of [0, 90, 180, 270]) {
+      const rib: THREE.Vector3[] = [];
+      for (let el = 0; el <= 90; el += 3) rib.push(domePoint(az, el));
+      g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(rib), new THREE.LineBasicMaterial({ color: 0x3b4a5a, transparent: true, opacity: 0.35 })));
+    }
+    for (const { sat, az, el } of overhead) {
+      const color = SKY_COLOR[sat.group];
+      const here = domePoint(az, el);
+      const minor = sat.group === 'gps';
+      const body = new THREE.Mesh(new THREE.OctahedronGeometry(minor ? 0.8 : 1.5), new THREE.MeshBasicMaterial({ color }));
+      body.position.copy(here);
+      g.add(body);
+      // The rest of its way across the sky, until it sets or the forecast ends.
+      const ahead = sat.track.filter(([t, , e]) => t > now && e > 0).map(([, a, e]) => domePoint(a, e));
+      if (ahead.length > 0) {
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([here, ...ahead]), new THREE.LineBasicMaterial({ color, transparent: true, opacity: minor ? 0.35 : 0.8 })));
+      }
+      const tag = label(minor ? sat.name : `${sat.name} · ${Math.round(el)}°`, minor ? '#93a4b3' : `#${color.toString(16).padStart(6, '0')}`, minor ? 0.5 : 0.7);
+      tag.position.set(here.x, here.y + (minor ? 1.8 : 3), here.z);
+      g.add(tag);
+    }
+  }, [skyOn, overhead, now]);
 
   // Range rings, compass and the altitude scale.
   useEffect(() => {
@@ -330,6 +473,12 @@ export function Radar3D({ home, rangeKm, planes, trails, devices, filter, now }:
         <Button size="xs" variant="surface" onClick={() => setSpin((v) => !v)} aria-pressed={spin}>
           {spin ? <><LuPause /> Atura el gir</> : <><LuRotate3D /> Gira</>}
         </Button>
+        <Button size="xs" variant={mapOn ? 'solid' : 'surface'} colorPalette={mapOn ? 'brand' : undefined} onClick={() => setMapOn((v) => !v)} aria-pressed={mapOn} title="Mapa a terra">
+          <LuMap /> Mapa
+        </Button>
+        <Button size="xs" variant={skyOn ? 'solid' : 'surface'} colorPalette={skyOn ? 'brand' : undefined} onClick={() => setSkyOn((v) => !v)} aria-pressed={skyOn} title="Satèl·lits sobre l’horitzó">
+          <LuSatellite /> Satèl·lits
+        </Button>
         <Button size="xs" variant="surface" onClick={() => stageRef.current?.controls.reset()} title="Torna a la vista inicial">
           <LuFocus /> Recentra
         </Button>
@@ -339,8 +488,20 @@ export function Radar3D({ home, rangeKm, planes, trails, devices, filter, now }:
           Avions, posició real: cada avió emet la seva posició GPS i l’altitud (ADS-B). Con = rumb · línia al davant = on serà d’aquí a 2 min · tija = alçada sobre el terra.
           {' '}L’altitud es dibuixa a ×{exaggeration.toLocaleString('ca-ES', { maximumFractionDigits: 1 })} de l’escala del terra. El feix que gira és decoratiu.
           {' '}Dispositius: un anell a terra segons la força del senyal (com més fort, més a prop del centre). Se’n sap la proximitat, no la direcció: el punt només hi posa el nom.
+          {skyOn && (
+            <>
+              {' '}Satèl·lits ({overhead.length} sobre l’horitzó): posició <b>calculada</b> amb l’òrbita publicada (Celestrak), no rebuda. A la cúpula només compta la direcció (on mirar i a quina elevació), no la distància. Groc = meteorològics que es poden rebre a 137 MHz · rosa = ISS · gris = GPS.
+              {skyError && ' No s’han pogut obtenir les òrbites (cal connexió).'}
+            </>
+          )}
+          {mapOn && mapState === 'failed' && ' El mapa no s’ha pogut carregar (cal connexió).'}
         </Text>
       </Box>
+      {mapOn && mapState === 'ready' && (
+        <Text position="absolute" top={`${HEIGHT_PX - 20}px`} right="3" fontSize="2xs" color="fg.muted" pointerEvents="none">
+          {BASEMAP_ATTRIBUTION}
+        </Text>
+      )}
     </Box>
   );
 }
