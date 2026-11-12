@@ -108,7 +108,7 @@ export function Radar() {
         <Box gridColumn={{ base: 'auto', xl: 'span 2' }}>
           {view === '3d' ? (
             <Suspense fallback={<Skeleton h="560px" rounded="l2" />}>
-              <Radar3D home={home} rangeKm={rangeKm} planes={planes} trails={trails} now={now} />
+              <Radar3D home={home} rangeKm={rangeKm} planes={planes} trails={trails} devices={shownDevices} filter={filter} now={now} />
             </Suspense>
           ) : (
             <RadarCanvas home={home} rangeKm={rangeKm} planes={planes} trails={trails} devices={shownDevices} filter={filter} now={now} />
