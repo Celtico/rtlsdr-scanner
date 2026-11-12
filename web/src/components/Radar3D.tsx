@@ -25,6 +25,8 @@ const BG = 0x0b0d10;
 const TEAL = 0x2dd4bf;
 /** A plane not heard for this long is drawn faded. */
 const STALE_MS = 60_000;
+/** Aircraft heard without a position are kept on the altitude mast for this long. */
+const UNPLACED_MS = 5 * 60_000;
 
 export interface Radar3DProps {
   home: { lat: number; lon: number };
@@ -75,6 +77,11 @@ export function Radar3D({ home, rangeKm, planes, trails, now }: Radar3DProps) {
   }, [home, rangeKm]);
 
   const positioned = useMemo(() => planes.filter((p) => p.lat != null && p.lon != null), [planes]);
+  // Heard, with an altitude, but no position yet: we know how high it is, not where.
+  const unplaced = useMemo(
+    () => planes.filter((p) => (p.lat == null || p.lon == null) && p.altitudeFt != null && now - p.lastSeen < UNPLACED_MS).slice(0, 8),
+    [planes, now],
+  );
   const inRange = useMemo(() => positioned.filter((p) => place(p.lat!, p.lon!).km <= rangeKm * 1.05), [positioned, place, rangeKm]);
   // How much taller than true scale altitudes are drawn (so 10 km of height is visible over 100 km of ground).
   const exaggeration = (CEILING / (CEILING_FT * KM_PER_FT)) / (RADIUS / rangeKm);
@@ -247,18 +254,39 @@ export function Radar3D({ home, rangeKm, planes, trails, now }: Radar3DProps) {
       tag.position.set(x, y + 4.4, z);
       g.add(tag);
     }
-  }, [inRange, place, trails, now, rangeKm]);
+
+    // Aircraft without a position: a dashed ring around the mast at their altitude. The ring says
+    // "somewhere around, this high"; its radius means nothing.
+    unplaced.forEach((p, i) => {
+      const y = altY(p.altitudeFt);
+      const color = new THREE.Color(altitudeColor(p.altitudeFt));
+      const r = 9 + i * 2.2;
+      const pts: THREE.Vector3[] = [];
+      for (let k = 0; k <= 96; k++) { const a = (k / 96) * Math.PI * 2; pts.push(new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r)); }
+      const ring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineDashedMaterial({ color, dashSize: 1.1, gapSize: 0.9, transparent: true, opacity: 0.85 }));
+      ring.computeLineDistances();
+      g.add(ring);
+      const name = p.callsign?.trim() || p.icao.toUpperCase();
+      const tag = label(`${name} · ${p.altitudeFt!.toLocaleString('ca-ES')} ft · sense posició`, '#b6c2cc', 0.9);
+      // Spread the names around the mast so aircraft at similar altitudes do not print on top of each other.
+      const a = i * 2.1;
+      tag.position.set(Math.cos(a) * (r + 9), y + 1.2, Math.sin(a) * (r + 9));
+      g.add(tag);
+    });
+  }, [inRange, unplaced, place, trails, now, rangeKm]);
 
   const outside = positioned.length - inRange.length;
   return (
     <Box borderWidth="1px" rounded="l2" overflow="hidden" bg="bg.subtle" position="relative" minW="0">
       <Box ref={mountRef} h={`${HEIGHT_PX}px`} role="img" aria-label={`Radar 3D: ${inRange.length} avions amb posició`} />
       {inRange.length === 0 && (
-        <Box position="absolute" top="50%" left="0" right="0" textAlign="center" pointerEvents="none" px="6">
+        <Box position="absolute" top="3" left="3" right="32" pointerEvents="none">
           <Text color="fg.muted" fontSize="sm">
             {outside > 0
               ? 'Hi ha avions amb posició, però fora de l’abast triat. Amplia l’abast.'
-              : 'Cap avió amb posició encara. Inicia «Escolta avions» i espera: cal rebre una trama parell i una senar del mateix avió.'}
+              : unplaced.length > 0
+                ? `Sentits ${unplaced.length} avions, encara sense posició: se’n sap l’altitud (anell puntejat) però no on són. Cal rebre una trama parell i una senar del mateix avió.`
+                : 'Cap avió encara. Amb «Escolta avions» en marxa, espera uns minuts; amb l’antena a la finestra se’n reben molts més.'}
           </Text>
         </Box>
       )}
@@ -270,7 +298,7 @@ export function Radar3D({ home, rangeKm, planes, trails, now }: Radar3DProps) {
       <Box px="3" py="2" borderTopWidth="1px">
         <Text fontSize="xs" color="fg.muted">
           Posicions reals: cada avió emet la seva posició GPS i l’altitud (ADS-B). Con = rumb · línia al davant = on serà d’aquí a 2 min · tija = alçada sobre el terra.
-          {' '}L’altitud es dibuixa ×{exaggeration.toLocaleString('ca-ES', { maximumFractionDigits: 1 })} perquè es vegi. El feix que gira és decoratiu.
+          {' '}L’altitud es dibuixa a ×{exaggeration.toLocaleString('ca-ES', { maximumFractionDigits: 1 })} de l’escala del terra. El feix que gira és decoratiu.
           {' '}Els dispositius sense posició només surten al radar 2D.
         </Text>
       </Box>
