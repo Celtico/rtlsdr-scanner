@@ -191,7 +191,10 @@ export function Spectrum3D({ sweeps, bands, markedHz }: Spectrum3DProps) {
     const n = surface.length;
     const xOf = (c: number) => (c / (cols - 1) - 0.5) * WIDTH;
     // Latest sweep at the front (towards the camera), older ones recede.
-    const zOf = (r: number) => DEPTH / 2 - ((n - 1 - r) / Math.max(1, MAX_ROWS - 1)) * DEPTH;
+    // With only a few sweeps each one gets more depth, so the surface is visible from the first pass
+    // instead of starting as a thin line. From 16 sweeps on the spacing shrinks until MAX_ROWS fill DEPTH.
+    const depthPerRow = DEPTH / Math.min(MAX_ROWS - 1, Math.max(15, n - 1));
+    const zOf = (r: number) => DEPTH / 2 - (n - 1 - r) * depthPerRow;
     const level = (db: number) => (Number.isFinite(db) ? Math.max(0, Math.min(1.15, (db - range.lo) / (range.hi - range.lo))) : 0);
     const yOf = (db: number) => Math.pow(level(db), 1.35) * HEIGHT;
 
