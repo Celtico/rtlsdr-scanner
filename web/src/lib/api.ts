@@ -1,4 +1,4 @@
-import type { Band, Device, ModeConfig, Plane, Reading, SatCapture, SatInfo, SatPass, Scan, SkySat, Signal, Status, Sweep } from '@shared/types';
+import type { Band, Device, ModeConfig, Plane, Reading, SatCapture, SatInfo, KnownSignal, SatPass, Scan, SkySat, Signal, Status, Sweep } from '@shared/types';
 import type { AuditVerdict } from '@shared/sdr/audit';
 import type { ChunkDelta, EmiReport } from '@shared/sdr/emi';
 import type { CalScale, Calibration } from '@shared/sdr/calibration';
@@ -46,6 +46,7 @@ export const api = {
   checkDongle: () => request<Status['dongle']>('/api/dongle/check', { method: 'POST' }),
   setMode: (mc: ModeConfig) => request<Status>('/api/mode', { method: 'POST', body: JSON.stringify(mc) }),
   bands: () => request<Band[]>('/api/bands'),
+  knownSignals: () => request<{ signals: KnownSignal[] }>('/api/signals/known'),
   signals: (scanId?: number) => request<{ scanId: number | null; signals: Signal[] }>(`/api/signals${scanId ? `?scanId=${scanId}` : ''}`),
   sweeps: (scanId?: number, limit = 300) => request<{ scanId: number | null; sweeps: Sweep[] }>(`/api/sweeps?limit=${limit}${scanId ? `&scanId=${scanId}` : ''}`),
   devices: () => request<Device[]>('/api/devices'),

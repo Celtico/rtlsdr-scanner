@@ -1,7 +1,7 @@
 import { Badge, Box, Button, Card, Field, HStack, Input, NativeSelect, SegmentGroup, SimpleGrid, Skeleton, Stack, Text } from '@chakra-ui/react';
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { LuBox, LuCircleStop, LuDownload, LuLayers, LuPlay } from 'react-icons/lu';
-import { DEFAULT_SURVEY, type Signal, type SurveyConfig } from '@shared/types';
+import { DEFAULT_SURVEY, type KnownSignal, type Signal, type SurveyConfig } from '@shared/types';
 import { useSdr } from '@/store';
 import { api } from '@/lib/api';
 import { formatTime } from '@/lib/format';
@@ -54,7 +54,17 @@ export function Spectrum() {
   const [marked, setMarked] = useState<number | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<View>('waterfall');
+  const [scope, setScope] = useState<'scan' | 'known'>('scan');
+  const [known, setKnown] = useState<KnownSignal[]>([]);
   const running = status?.mode === 'survey';
+  // Everything found in any run. Refreshed when this run finds something new.
+  useEffect(() => {
+    if (scope !== 'known') return;
+    let alive = true;
+    void api.knownSignals().then((r) => { if (alive) setKnown(r.signals); }).catch(() => { /* keep the last list */ });
+    return () => { alive = false; };
+  }, [scope, signals.length, signalsScanId]);
+  const listed = scope === 'known' ? known : signals;
   const audio = useAudioEngine();
   const runningConfig = running && status.config && 'fromHz' in status.config ? status.config : null;
   // Mirror the running survey's configuration (it may have been started from another page or client).
@@ -168,14 +178,21 @@ export function Spectrum() {
       <Card.Root size="sm" minW="0" overflow="hidden">
         <Card.Header>
           <HStack justify="space-between" flexWrap="wrap">
-            <HStack gap="3"><Card.Title>Senyals ({signals.length})</Card.Title><UnitsToggle gainDb={signalsGainDb} /></HStack>
+            <HStack gap="3" flexWrap="wrap">
+              <Card.Title>Senyals ({listed.length})</Card.Title>
+              <SegmentGroup.Root value={scope} onValueChange={(e) => setScope(e.value === 'known' ? 'known' : 'scan')} size="xs" aria-label="Quins senyals es llisten">
+                <SegmentGroup.Indicator />
+                <SegmentGroup.Items items={[{ value: 'scan', label: 'Aquest escombrat' }, { value: 'known', label: 'Tots els coneguts' }]} />
+              </SegmentGroup.Root>
+              <UnitsToggle gainDb={signalsGainDb} />
+            </HStack>
             <Text fontSize="sm" color="fg.muted">Clica un senyal per marcar-lo al waterfall. Les emissores FM tenen botó d’escolta (atura l’escombrat: el dongle només fa una cosa alhora).</Text>
           </HStack>
         </Card.Header>
         <Card.Body pt="0">
           <Box maxH="lg" overflowY="auto">
             <SignalsTable
-              signals={signals}
+              signals={listed}
               selectedId={selected}
               onSelect={pick}
               playingHz={audio.playing ? audio.freqHz : null}

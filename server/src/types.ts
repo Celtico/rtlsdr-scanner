@@ -145,6 +145,12 @@ export interface Signal {
   lastSeen: number;
 }
 
+/** A signal merged across every sweep run it was found in. */
+export interface KnownSignal extends Signal {
+  /** Number of sweep runs it was found in. */
+  scans: number;
+}
+
 export interface Device {
   id: number;
   key: string;

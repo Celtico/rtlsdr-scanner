@@ -10,6 +10,7 @@ import { BANDS } from './sdr/bands.js';
 import { killAllSync } from './sdr/process.js';
 import { toCsv } from './export.js';
 import { classifyDevice, routineHours } from './sdr/audit.js';
+import { mergeKnownSignals } from './sdr/known.js';
 import { loadSkyTles, loadTles, predictAll, satInfo, SATELLITES, skyTracks } from './sdr/satellite.js';
 import { analyzeEmi, compareReports, floorTrend, medianSpectrum, type EmiReport } from './sdr/emi.js';
 import { removeEntry, upsertEntry, type Calibration } from './sdr/calibration.js';
@@ -140,6 +141,14 @@ app.get<{ Querystring: { scanId?: string; limit?: string } }>('/api/sweeps', asy
   const scanId = req.query.scanId ? Number(req.query.scanId) : status.mode === 'survey' ? status.scanId : db.latestScan('survey')?.id;
   if (scanId == null) return { scanId: null, sweeps: [] };
   return { scanId, sweeps: db.listSweeps(scanId, num(req.query.limit, 300)) };
+});
+
+/** Every signal found in any sweep run, merged across runs (the run in progress included). */
+app.get('/api/signals/known', async () => {
+  const status = manager.status();
+  const live = status.mode === 'survey' ? status.scanId : null;
+  const stored = db.listSignals().filter((s) => s.scanId !== live);
+  return { signals: mergeKnownSignals(live == null ? stored : [...stored, ...manager.currentSignals()]) };
 });
 
 app.get('/api/devices', async () => db.listDevices());

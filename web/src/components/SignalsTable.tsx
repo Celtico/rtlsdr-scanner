@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { LuArrowDown, LuArrowUp, LuArrowUpDown, LuLock, LuPlay, LuTv, LuCircleStop } from 'react-icons/lu';
 import { isFmBroadcast, mediaNote, mediaRoute } from '@/lib/media';
 import { Link as RouterLink } from 'react-router-dom';
-import type { Signal } from '@shared/types';
+import type { KnownSignal, Signal } from '@shared/types';
 import { formatMHz, formatWidth } from '@/lib/format';
 import { Tooltip } from '@/components/ui/tooltip';
 
@@ -19,7 +19,8 @@ const COLS: { key: Key; label: string; numeric?: boolean }[] = [
 ];
 
 export interface SignalsTableProps {
-  signals: Signal[];
+  /** With signals merged across runs, a last column says in how many runs each was found and when last. */
+  signals: (Signal | KnownSignal)[];
   selectedId: string | null;
   onSelect: (s: Signal) => void;
   /** Frequency currently playing (FM), to show the stop state. */
@@ -45,6 +46,7 @@ export function SignalsTable({ signals, selectedId, onSelect, playingHz = null, 
     return arr;
   }, [signals, sort]);
 
+  const known = signals.some((s) => 'scans' in s);
   const toggle = (key: Key) => setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'band' ? 'asc' : 'desc' }));
 
   if (!signals.length) {
@@ -67,6 +69,7 @@ export function SignalsTable({ signals, selectedId, onSelect, playingHz = null, 
                 </HStack>
               </Table.ColumnHeader>
             ))}
+            {known && <Table.ColumnHeader>Vist</Table.ColumnHeader>}
           </Table.Row>
         </Table.Header>
         <Table.Body>
@@ -124,6 +127,11 @@ export function SignalsTable({ signals, selectedId, onSelect, playingHz = null, 
                   <Text color={s.band ? 'fg' : 'fg.muted'}>{s.band ?? 'Desconeguda'}</Text>
                 </HStack>
               </Table.Cell>
+              {known && (
+                <Table.Cell color="fg.muted" whiteSpace="nowrap">
+                  {'scans' in s ? `${s.scans} ${s.scans === 1 ? 'escombrat' : 'escombrats'} · ${new Date(s.lastSeen).toLocaleDateString('ca-ES', { day: 'numeric', month: 'short' })}` : ''}
+                </Table.Cell>
+              )}
             </Table.Row>
           ))}
         </Table.Body>

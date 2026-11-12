@@ -98,6 +98,7 @@ Data lives in SQLite (`better-sqlite3`) under `data/`, which is git-ignored.
 | GET | `/api/bands` | band table |
 | GET | `/api/signals?scanId=` | detected signals |
 | GET | `/api/sweeps?scanId=&limit=` | sweeps (to reopen a waterfall) |
+| GET | `/api/signals/known` | every signal found in any sweep run, merged across runs |
 | GET | `/api/devices` | rtl_433 devices |
 | GET | `/api/devices/:id/history` | readings of one device |
 | PATCH | `/api/devices/:id` | `{ alias?, owner?: 'own' \| 'other' \| null, bearingDeg? }` |

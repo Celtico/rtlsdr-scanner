@@ -273,8 +273,10 @@ export class Db {
     })();
   }
 
-  listSignals(scanId: number): Signal[] {
-    const rows = this.db.prepare('SELECT * FROM signals WHERE scan_id = ? ORDER BY excess_db DESC').all(scanId) as SignalRow[];
+  listSignals(scanId?: number): Signal[] {
+    const rows = (scanId == null
+      ? this.db.prepare('SELECT * FROM signals ORDER BY excess_db DESC').all()
+      : this.db.prepare('SELECT * FROM signals WHERE scan_id = ? ORDER BY excess_db DESC').all(scanId)) as SignalRow[];
     return rows.map((r) => ({
       id: r.id, scanId: r.scan_id, freqHz: r.freq_hz, widthHz: r.width_hz, peakDb: r.peak_db, floorDb: r.floor_db,
       excessDb: r.excess_db, dutyPct: r.duty_pct, band: r.band, restricted: r.restricted === 1,
