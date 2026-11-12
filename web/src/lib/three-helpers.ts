@@ -14,7 +14,10 @@ export function disposeGroup(group: THREE.Group) {
   }
 }
 
-/** A text label that always faces the camera. */
+/**
+ * A text label that always faces the camera and keeps the same size on screen however far it is, so
+ * near labels do not balloon and far ones stay readable.
+ */
 export function label(text: string, color: string, scale = 1): THREE.Sprite {
   const pad = 8;
   const font = '600 28px system-ui, sans-serif';
@@ -29,9 +32,10 @@ export function label(text: string, color: string, scale = 1): THREE.Sprite {
   ctx.fillText(text, pad, canvas.height / 2);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, depthTest: false }));
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, depthTest: false, sizeAttenuation: false, fog: false }));
   sprite.renderOrder = 10; // text is always drawn on top of the scene
-  const h = 2.4 * scale;
+  // Without size attenuation the scale is a fraction of the view, not scene units.
+  const h = 0.036 * scale;
   sprite.scale.set((canvas.width / canvas.height) * h, h, 1);
   return sprite;
 }
