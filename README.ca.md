@@ -1,5 +1,7 @@
 # RTL-SDR Scanner
 
+![RTL-SDR Scanner: la ràdio del voltant de casa, en 3D](docs/cover.png)
+
 [English](README.md) · **Català**
 
 Aplicació web local per descobrir quins senyals de ràdio hi ha a casa amb un **RTL-SDR Blog V3** i, quan es pot, quin dispositiu els emet i quines dades envia. Només recepció.

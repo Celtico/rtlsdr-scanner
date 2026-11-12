@@ -1,5 +1,7 @@
 # RTL-SDR Scanner
 
+![RTL-SDR Scanner: the radio around your home, in 3D](docs/cover.png)
+
 **English** · [Català](README.ca.md)
 
 A local web app to find out which radio signals are around you with an **RTL-SDR Blog V3** dongle and, when possible, which device sends them and what it says. Receive only.
