@@ -1,6 +1,6 @@
 import { Box, Button, HStack, Text } from '@chakra-ui/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { LuPause, LuRotate3D } from 'react-icons/lu';
+import { LuFocus, LuPause, LuRotate3D } from 'react-icons/lu';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { Device, Plane } from '@shared/types';
@@ -115,6 +115,8 @@ export function Radar3D({ home, rangeKm, planes, trails, devices, filter, now }:
     controls.autoRotate = spinRef.current;
     controls.autoRotateSpeed = 0.35;
     controls.addEventListener('start', () => setSpin(false));
+    // The opening view, so it can be restored after zooming or panning too far.
+    controls.saveState();
 
     const ground = new THREE.Mesh(
       new THREE.CircleGeometry(RADIUS, 96),
@@ -327,6 +329,9 @@ export function Radar3D({ home, rangeKm, planes, trails, devices, filter, now }:
       <HStack position="absolute" top="2" right="2" gap="2">
         <Button size="xs" variant="surface" onClick={() => setSpin((v) => !v)} aria-pressed={spin}>
           {spin ? <><LuPause /> Atura el gir</> : <><LuRotate3D /> Gira</>}
+        </Button>
+        <Button size="xs" variant="surface" onClick={() => stageRef.current?.controls.reset()} title="Torna a la vista inicial">
+          <LuFocus /> Recentra
         </Button>
       </HStack>
       <Box px="3" py="2" borderTopWidth="1px">

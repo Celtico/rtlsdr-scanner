@@ -1,6 +1,6 @@
 import { Box, Button, HStack, Text } from '@chakra-ui/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { LuPause, LuRotate3D } from 'react-icons/lu';
+import { LuFocus, LuPause, LuRotate3D } from 'react-icons/lu';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { Band, Sweep } from '@shared/types';
@@ -106,6 +106,8 @@ export function Spectrum3D({ sweeps, bands, markedHz }: Spectrum3DProps) {
     controls.autoRotateSpeed = 0.5;
     // Touching the scene hands the camera to the user.
     controls.addEventListener('start', () => setSpin(false));
+    // The opening view, so it can be restored after zooming or panning too far.
+    controls.saveState();
 
     const floor = new THREE.GridHelper(Math.max(WIDTH, DEPTH) * 1.6, 32, 0x1f2a33, 0x151b21);
     floor.position.y = -0.05;
@@ -287,6 +289,9 @@ export function Spectrum3D({ sweeps, bands, markedHz }: Spectrum3DProps) {
       <HStack position="absolute" top="2" right="2" gap="2">
         <Button size="xs" variant="surface" onClick={() => setSpin((v) => !v)} aria-pressed={spin}>
           {spin ? <><LuPause /> Atura el gir</> : <><LuRotate3D /> Gira</>}
+        </Button>
+        <Button size="xs" variant="surface" onClick={() => stageRef.current?.controls.reset()} title="Torna a la vista inicial">
+          <LuFocus /> Recentra
         </Button>
       </HStack>
       <Box px="3" py="2" borderTopWidth="1px">
