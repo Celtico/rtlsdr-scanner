@@ -13,6 +13,7 @@ It runs entirely on your machine: the server talks to the dongle, the browser sh
 ## What it does
 
 - **Spectrum**: sweeps with `rtl_power`, live waterfall, peak detection over the noise floor and classification by band (Spain/EU allocations).
+- **3D spectrum**: the same sweeps as a landscape you can orbit: width is frequency, height is level, depth is time. It is the waterfall in volume, not a map of where signals come from (one antenna has no direction).
 - **Devices**: `rtl_433` hopping between 433.92 and 868.3 MHz. Deduplicated by model + id + channel, with reading history, aliases and a "probably mine / neighbours" filter based on signal strength.
 - **Aircraft**: ADS-B at 1090 MHz with `rtl_adsb` (ICAO address, country from the ICAO block, callsign, altitude, position, speed, heading).
 - **Radar**: a plan view centred on your home position. Aircraft are drawn at their real position with a trail; other devices sit on RSSI rings with unknown direction (or a manual bearing, if you found it with a directional antenna).
@@ -24,6 +25,10 @@ It runs entirely on your machine: the server talks to the dongle, the browser sh
 - **Noise (EMI)**: local interference from the sweeps: noise-floor profile, spur combs (switching power supplies), wideband stretches (PLC, motors), fixed carriers, and before/after comparison against a baseline to find the appliance that pollutes the spectrum. Relative dB, uncalibrated: it does not measure V/m or health limits.
 - **dBm calibration**: with a signal of known level, the app stores the offset per gain. Without one it estimates from typical R820T values (±6 dB).
 - **History**: every scan is saved to SQLite and can be reopened and exported (CSV/JSON).
+
+![3D spectrum landscape](docs/screenshots/espectre-3d.png)
+
+*3D view, here with synthetic data.*
 
 | Hunt (LoRaWAN EU868) | Satellites |
 | --- | --- |

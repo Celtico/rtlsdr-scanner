@@ -1,6 +1,6 @@
-import { Badge, Box, Button, Card, Field, HStack, Input, NativeSelect, SimpleGrid, Stack, Text } from '@chakra-ui/react';
-import { useEffect, useState } from 'react';
-import { LuCircleStop, LuDownload, LuPlay } from 'react-icons/lu';
+import { Badge, Box, Button, Card, Field, HStack, Input, NativeSelect, SegmentGroup, SimpleGrid, Skeleton, Stack, Text } from '@chakra-ui/react';
+import { Suspense, lazy, useEffect, useState } from 'react';
+import { LuBox, LuCircleStop, LuDownload, LuLayers, LuPlay } from 'react-icons/lu';
 import { DEFAULT_SURVEY, type Signal, type SurveyConfig } from '@shared/types';
 import { useSdr } from '@/store';
 import { api } from '@/lib/api';
@@ -10,6 +10,11 @@ import { audioEngine, useAudioEngine } from '@/lib/audioEngine';
 import { useUnits } from '@/lib/units';
 import { UnitsToggle } from '@/components/UnitsToggle';
 import { SignalsTable } from '@/components/SignalsTable';
+
+// three.js only loads when the 3D view is opened.
+const Spectrum3D = lazy(() => import('@/components/Spectrum3D').then((m) => ({ default: m.Spectrum3D })));
+
+type View = 'waterfall' | '3d';
 
 const PRESETS: { label: string; fromMHz: number; toMHz: number; stepKHz: number }[] = [
   { label: 'Tot (24–1700 MHz, 100 kHz)', fromMHz: 24, toMHz: 1700, stepKHz: 100 },
@@ -48,6 +53,7 @@ export function Spectrum() {
   const [form, setForm] = useState<Form>(() => toForm(DEFAULT_SURVEY));
   const [marked, setMarked] = useState<number | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [view, setView] = useState<View>('waterfall');
   const running = status?.mode === 'survey';
   const audio = useAudioEngine();
   const runningConfig = running && status.config && 'fromHz' in status.config ? status.config : null;
@@ -137,7 +143,27 @@ export function Spectrum() {
         </Card.Body>
       </Card.Root>
 
-      <Waterfall sweeps={sweeps} bands={bands} markedHz={marked} onPick={(hz) => { setMarked(hz); setSelected(null); }} dbOffset={u.units === 'dbm' ? u.offset(signalsGainDb).offsetDb : null} />
+      <HStack justify="flex-end">
+        <SegmentGroup.Root size="sm" value={view} onValueChange={(e) => setView(e.value as View)} aria-label="Vista de l'espectre">
+          <SegmentGroup.Indicator />
+          <SegmentGroup.Item value="waterfall">
+            <SegmentGroup.ItemText><HStack gap="1.5"><LuLayers /> Waterfall</HStack></SegmentGroup.ItemText>
+            <SegmentGroup.ItemHiddenInput />
+          </SegmentGroup.Item>
+          <SegmentGroup.Item value="3d">
+            <SegmentGroup.ItemText><HStack gap="1.5"><LuBox /> 3D</HStack></SegmentGroup.ItemText>
+            <SegmentGroup.ItemHiddenInput />
+          </SegmentGroup.Item>
+        </SegmentGroup.Root>
+      </HStack>
+
+      {view === '3d' ? (
+        <Suspense fallback={<Skeleton h="520px" rounded="l2" />}>
+          <Spectrum3D sweeps={sweeps} bands={bands} markedHz={marked} />
+        </Suspense>
+      ) : (
+        <Waterfall sweeps={sweeps} bands={bands} markedHz={marked} onPick={(hz) => { setMarked(hz); setSelected(null); }} dbOffset={u.units === 'dbm' ? u.offset(signalsGainDb).offsetDb : null} />
+      )}
 
       <Card.Root size="sm" minW="0" overflow="hidden">
         <Card.Header>
