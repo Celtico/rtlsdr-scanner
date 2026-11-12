@@ -8,7 +8,7 @@ It runs entirely on your machine: the server talks to the dongle, the browser sh
 
 ![The spectrum as a 3D landscape, from a real sweep](docs/demo.gif)
 
-*A real sweep from 24 MHz to 1.7 GHz, stock antenna. [22-second demo video (MP4)](docs/demo.mp4).*
+*A real sweep from 24 MHz to 1.7 GHz, stock antenna. [28-second demo video with the 3D radar (MP4)](docs/demo.mp4).*
 
 ![Spectrum sweep with waterfall and detected signals](docs/screenshots/espectre.png)
 
