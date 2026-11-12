@@ -459,7 +459,7 @@ export function Radar3D({ home, rangeKm, planes, trails, devices, filter, now }:
     <Box borderWidth="1px" rounded="l2" overflow="hidden" bg="bg.subtle" position="relative" minW="0">
       <Box ref={mountRef} h={`${HEIGHT_PX}px`} role="img" aria-label={`Radar 3D: ${inRange.length} avions amb posició`} />
       {showPlanes && inRange.length === 0 && (
-        <Box position="absolute" top="3" left="3" right="32" pointerEvents="none">
+        <Box position="absolute" top="12" left="3" right="3" pointerEvents="none">
           <Text color="fg.muted" fontSize="sm">
             {outside > 0
               ? 'Hi ha avions amb posició, però fora de l’abast triat. Amplia l’abast.'
